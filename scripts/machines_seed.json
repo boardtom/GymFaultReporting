@@ -1,0 +1,10 @@
+[
+  {"id": "RW-03", "name": "Rowing machine 03", "location": "Cardio zone"},
+  {"id": "TM-07", "name": "Treadmill 07", "location": "Cardio zone"},
+  {"id": "LP-02", "name": "Leg press 02", "location": "Resistance zone"},
+  {"id": "CB-01", "name": "Cable crossover 01", "location": "Resistance zone"},
+  {"id": "SB-05", "name": "Spin bike 05", "location": "Studio 1"},
+  {"id": "SM-01", "name": "Smith machine 01", "location": "Free weights"},
+  {"id": "XT-09", "name": "Cross trainer 09", "location": "Cardio zone"},
+  {"id": "LC-04", "name": "Lat pulldown 04", "location": "Resistance zone"}
+]

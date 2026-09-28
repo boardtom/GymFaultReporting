@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Report a fault{% endblock %}
+{% block body %}
+<div class="center-screen">
+  <div class="phone-wrap">
+    <div class="brand-row">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 17V7M8 20V4M12 15V9M16 20V4M20 17V7" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <h1>Fault Flag</h1>
+    </div>
+
+    <div class="card">
+      <div class="machine-card">
+        <div class="machine-icon">{{ machine.name[:2]|upper }}</div>
+        <div>
+          <div class="machine-name">{{ machine.name }}</div>
+          <div class="machine-loc mono">{{ machine.location }} &middot; {{ machine.id }}</div>
+        </div>
+      </div>
+
+      <form method="post">
+        <label class="field">
+          What's wrong?
+          <select name="fault_type" required>
+            {% for ft in fault_types %}<option value="{{ ft }}">{{ ft }}</option>{% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          Urgency
+          <div class="severity-row">
+            {% for sev in severities %}
+            <label>
+              <input type="radio" name="severity" value="{{ sev }}" {% if sev == "Medium" %}checked{% endif %}>
+              <span class="opt">{{ sev }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </label>
+
+        <label class="field">
+          Details (optional)
+          <textarea name="details" rows="3" placeholder="e.g. left pedal strap has snapped"></textarea>
+        </label>
+
+        <button type="submit" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h16M13 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Report fault
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Report equipment fault{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Fault Flag</h1>
+    <nav class="app-nav">
+      <a href="{{ url_for('login') }}">Admin</a>
+    </nav>
+  </div>
+  <p style="color:var(--text-muted);font-size:13.5px;max-width:60ch;margin-top:-8px;">
+    Scan the QR code on a machine to report a fault. This page lists every machine directly, for testing or if a code is missing.
+  </p>
+
+  <div class="qr-grid" style="margin-top:18px;">
+    {% for m in machines %}
+    <a href="{{ url_for('report', machine_id=m.id) }}" class="qr-card" style="text-decoration:none;color:inherit;">
+      <div class="machine-icon" style="width:44px;height:44px;font-size:15px;">{{ m.name[:2]|upper }}</div>
+      <div class="m-name">{{ m.name }}</div>
+      <div class="m-loc">{{ m.location }} &middot; <span class="mono">{{ m.id }}</span></div>
+    </a>
+    {% else %}
+    <p style="color:var(--text-muted);">No machines set up yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

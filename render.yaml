@@ -1,0 +1,40 @@
+# Render "Blueprint" — lets Render create the web service and database
+# together from this one file (New + > Blueprint in the Render dashboard,
+# pointed at this repo). You can also skip this and create the web service
+# manually; see README.md.
+services:
+  - type: web
+    name: fault-flag
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false          # set this yourself in the Render dashboard
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fault-flag-db
+          property: connectionString
+      - key: APP_BASE_URL
+        sync: false          # set to your Render URL or custom domain once known
+      - key: ALERT_TO_EMAIL
+        sync: false
+      - key: MAIL_FROM_EMAIL
+        sync: false
+      - key: MAIL_SERVER
+        sync: false
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_USE_TLS
+        value: "true"
+
+databases:
+  - name: fault-flag-db
+    plan: free

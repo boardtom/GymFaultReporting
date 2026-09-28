@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="center-screen">
+  <div class="card login-card">
+    <h1>Fault Flag admin</h1>
+    <p class="sub">Enter the shared admin password to view the fault log.</p>
+    <form method="post">
+      <label class="field">
+        Password
+        <input type="password" name="password" autofocus required>
+      </label>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Fault log{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Fault log</h1>
+    <nav class="app-nav">
+      <a href="{{ url_for('log_view') }}" class="active">Log</a>
+      <a href="{{ url_for('qr_index') }}">QR codes</a>
+      <a href="{{ url_for('machines_admin') }}">Machines</a>
+      <a href="{{ url_for('logout') }}">Sign out</a>
+    </nav>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="n">{{ total }}</div><div class="l">Total</div></div>
+    <div class="stat"><div class="n">{{ open_count }}</div><div class="l">Open</div></div>
+    <div class="stat"><div class="n">{{ resolved_count }}</div><div class="l">Resolved</div></div>
+  </div>
+
+  <div class="filter-group">
+    <a href="{{ url_for('log_view', status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All</a>
+    <a href="{{ url_for('log_view', status='open') }}" class="{{ 'active' if status_filter == 'open' }}">Open</a>
+    <a href="{{ url_for('log_view', status='resolved') }}" class="{{ 'active' if status_filter == 'resolved' }}">Resolved</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Reported</th><th>Machine</th><th>Location</th><th>Fault</th><th>Urgency</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td class="mono">{{ r.created_at.strftime('%d %b %H:%M') }}</td>
+          <td>{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div></td>
+          <td>{{ r.machine.location }}</td>
+          <td>{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
+          <td>{{ r.severity }}</td>
+          <td>
+            {% if r.status == 'open' %}
+              <span class="badge open"><span class="dot"></span>Open</span>
+            {% else %}
+              <span class="badge resolved"><span class="dot"></span>Resolved</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('toggle_report', report_id=r.id, status=status_filter) }}">
+              <button type="submit" class="row-btn">{{ 'Mark resolved' if r.status == 'open' else 'Reopen' }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty-row">No reports in this view.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

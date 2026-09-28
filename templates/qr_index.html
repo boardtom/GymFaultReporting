@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}QR codes{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>QR codes</h1>
+    <nav class="app-nav">
+      <a href="{{ url_for('log_view') }}">Log</a>
+      <a href="{{ url_for('qr_index') }}" class="active">QR codes</a>
+      <a href="{{ url_for('machines_admin') }}">Machines</a>
+      <a href="{{ url_for('logout') }}">Sign out</a>
+    </nav>
+  </div>
+  <p style="color:var(--text-muted);font-size:13.5px;max-width:60ch;margin-top:-8px;">
+    Each code links straight to that machine's report form. Right-click &rarr; save, or download the PNG, to print and fix to the equipment.
+  </p>
+
+  <div class="qr-grid" style="margin-top:18px;">
+    {% for m in machines %}
+    <div class="qr-card">
+      <img src="{{ qr_data[m.id].data_uri }}" alt="QR code for {{ m.name }}">
+      <div class="m-name">{{ m.name }}</div>
+      <div class="m-loc">{{ m.location }} &middot; <span class="mono">{{ m.id }}</span></div>
+      <a href="{{ url_for('qr_png', machine_id=m.id) }}" class="mono" style="font-size:11px;color:var(--red);">Download PNG</a>
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);">No active machines yet &mdash; add some on the Machines page.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

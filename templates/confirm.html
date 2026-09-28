@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Fault reported{% endblock %}
+{% block body %}
+<div class="center-screen">
+  <div class="phone-wrap">
+    <div class="brand-row">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 17V7M8 20V4M12 15V9M16 20V4M20 17V7" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <h1>Fault Flag</h1>
+    </div>
+
+    <div class="card confirm">
+      <div class="tick">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2>Fault reported</h2>
+      {% if email_sent %}
+        <p>Facilities have been emailed about {{ machine.name }}. Thanks for flagging it.</p>
+      {% else %}
+        <p>Your report for {{ machine.name }} has been logged.</p>
+        <p class="warn-note">The email alert couldn't be sent &mdash; check the mail settings.</p>
+      {% endif %}
+      <a href="{{ url_for('report', machine_id=machine.id) }}" class="btn btn-ghost">Report another fault</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Machines{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Machines</h1>
+    <nav class="app-nav">
+      <a href="{{ url_for('log_view') }}">Log</a>
+      <a href="{{ url_for('qr_index') }}">QR codes</a>
+      <a href="{{ url_for('machines_admin') }}" class="active">Machines</a>
+      <a href="{{ url_for('logout') }}">Sign out</a>
+    </nav>
+  </div>
+
+  <form method="post" class="form-row">
+    <label class="field">
+      Machine ID
+      <input type="text" name="id" placeholder="e.g. TM-08" required>
+    </label>
+    <label class="field">
+      Name
+      <input type="text" name="name" placeholder="e.g. Treadmill 08" required>
+    </label>
+    <label class="field">
+      Location
+      <input type="text" name="location" placeholder="e.g. Cardio zone" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Add machine</button>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for m in machines %}
+        <tr>
+          <td class="mono">{{ m.id }}</td>
+          <td>{{ m.name }}</td>
+          <td>{{ m.location }}</td>
+          <td>
+            {% if m.active %}<span class="badge resolved"><span class="dot"></span>Active</span>
+            {% else %}<span class="badge open"><span class="dot"></span>Inactive</span>{% endif %}
+          </td>
+          <td>
+            {% if m.active %}
+            <form method="post" action="{{ url_for('deactivate_machine', machine_id=m.id) }}">
+              <button type="submit" class="row-btn">Deactivate</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty-row">No machines yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
