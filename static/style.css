@@ -38,6 +38,17 @@ a{color:var(--red);}
 
 /* ---- phone-style report page ---- */
 .phone-wrap{width:100%;max-width:400px;margin:0 auto;padding:24px 16px 40px;}
+
+.partner-strip{
+  display:flex;align-items:center;justify-content:center;gap:18px;
+  background:#FFFFFF;border:1px solid var(--border);border-radius:14px;
+  padding:14px 18px;margin-bottom:20px;box-shadow:var(--shadow);
+}
+.partner-strip img{display:block;max-width:100%;}
+.partner-strip .logo-wi{height:26px;width:auto;}
+.partner-strip .logo-adidas{height:30px;width:auto;}
+.partner-divider{width:1px;align-self:stretch;background:var(--border);}
+
 .brand-row{display:flex;align-items:center;gap:10px;margin-bottom:22px;justify-content:center;}
 .brand-mark{
   width:32px;height:32px;border-radius:8px;background:var(--navy);
