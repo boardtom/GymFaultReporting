@@ -1,9 +1,9 @@
 """
-Fault Flag — QR-based equipment fault reporting.
+Fault Flag: QR-based equipment fault reporting.
 
 A member scans a QR code fixed to a machine, lands on a pre-filled report
 form, submits a fault, and:
-  1. an email is sent to the facilities mailbox
+  1. an email alert is sent (via Resend's web API, or SMTP as a fallback)
   2. the report is logged in the database with a status (open/resolved)
 
 Run locally:
@@ -17,16 +17,25 @@ import io
 import json
 import base64
 import functools
+import smtplib
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from email.message import EmailMessage
-import smtplib
 
+import click
+import qrcode
 from flask import (
     Flask, render_template, request, redirect, url_for, session,
     flash, abort, jsonify, send_file
 )
 from flask_sqlalchemy import SQLAlchemy
-import qrcode
+
+try:
+    from zoneinfo import ZoneInfo
+    UK_TZ = ZoneInfo("Europe/London")
+except Exception:  # tz database missing: fall back to UTC
+    UK_TZ = timezone.utc
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -35,10 +44,13 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # --- Database -----------------------------------------------------------
 # Render's free web service has no persistent disk. For real use, set
-# DATABASE_URL to a Render Postgres connection string (Render provides one
-# automatically if you attach a Postgres add-on and reference it here).
+# DATABASE_URL to the Render Postgres Internal Database URL.
 # Falls back to a local SQLite file for development.
-db_url = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'faultflag.db')}")
+os.makedirs(os.path.join(BASE_DIR, "instance"), exist_ok=True)
+db_url = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'faultflag.db')}",
+)
 if db_url.startswith("postgres://"):  # SQLAlchemy wants postgresql://
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -49,13 +61,22 @@ db = SQLAlchemy(app)
 # --- Config from environment --------------------------------------------
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 ALERT_TO = os.environ.get("ALERT_TO_EMAIL", "facilities@wellnessinternational.co.uk")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000").rstrip("/")
+
+# Email option 1 (recommended on Render's free tier): Resend web API.
+# Free Render services block SMTP ports, but HTTPS calls are fine.
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+# Until a domain is verified in Resend, the sender must be onboarding@resend.dev
+# and Resend only delivers to the address the Resend account was created with.
+RESEND_FROM = os.environ.get("RESEND_FROM_EMAIL", "Fault Flag <onboarding@resend.dev>")
+
+# Email option 2: plain SMTP (works on paid Render plans or other hosts).
 MAIL_FROM = os.environ.get("MAIL_FROM_EMAIL", "faultflag@wellnessinternational.co.uk")
-MAIL_SERVER = os.environ.get("MAIL_SERVER")            # e.g. smtp.office365.com
+MAIL_SERVER = os.environ.get("MAIL_SERVER")
 MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
 MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
 MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
 MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")  # used when generating QR links
 
 FAULT_TYPES = [
     "Won't power on",
@@ -74,9 +95,6 @@ class Machine(db.Model):
     name = db.Column(db.String(120), nullable=False)
     location = db.Column(db.String(120), nullable=False)
     active = db.Column(db.Boolean, default=True)
-
-    def to_dict(self):
-        return {"id": self.id, "name": self.name, "location": self.location}
 
 
 class Report(db.Model):
@@ -119,42 +137,86 @@ def logout():
 
 
 # --- Email ------------------------------------------------------------
-def send_fault_email(report: Report):
-    """Send the fault alert. Logs to console if SMTP isn't configured,
-    so the app still works end-to-end in development."""
-    subject_prefix = "[URGENT] " if report.severity == "High" else ""
-    subject = f"{subject_prefix}Equipment fault — {report.machine.name}"
+def _local_time(dt):
+    """Report times are stored in UTC; show them in UK time in emails."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UK_TZ).strftime("%d %b %Y %H:%M")
+
+
+def build_fault_email(report):
+    """Return (subject, plain-text body) for a fault alert."""
+    prefix = "[URGENT] " if report.severity == "High" else ""
+    subject = f"{prefix}Equipment fault: {report.machine.name} ({report.machine.id})"
     body = (
         f"Machine: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
         f"Fault: {report.fault_type}\n"
         f"Urgency: {report.severity}\n"
-        f"Reported: {report.created_at.strftime('%d %b %Y %H:%M')} UTC\n"
+        f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
         + f"\nView in the fault log: {APP_BASE_URL}{url_for('log_view')}\n"
     )
+    return subject, body
 
-    if not MAIL_SERVER:
-        app.logger.warning("MAIL_SERVER not set — email not sent. Would have sent:\n%s\n%s", subject, body)
-        return False
 
+def _send_via_resend(subject, body):
+    payload = json.dumps({
+        "from": RESEND_FROM,
+        "to": [ALERT_TO],
+        "subject": subject,
+        "text": body,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "fault-flag/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return 200 <= resp.status < 300
+
+
+def _send_via_smtp(subject, body):
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = MAIL_FROM
     msg["To"] = ALERT_TO
     msg.set_content(body)
+    with smtplib.SMTP(MAIL_SERVER, MAIL_PORT, timeout=10) as smtp:
+        if MAIL_USE_TLS:
+            smtp.starttls()
+        if MAIL_USERNAME and MAIL_PASSWORD:
+            smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
+        smtp.send_message(msg)
+    return True
+
+
+def send_fault_email(report):
+    """Send the fault alert. Returns True if sent. If no email option is
+    configured, the email is written to the log instead, so the app still
+    works end to end in development."""
+    subject, body = build_fault_email(report)
 
     try:
-        with smtplib.SMTP(MAIL_SERVER, MAIL_PORT, timeout=10) as smtp:
-            if MAIL_USE_TLS:
-                smtp.starttls()
-            if MAIL_USERNAME and MAIL_PASSWORD:
-                smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
-            smtp.send_message(msg)
-        return True
-    except Exception as exc:  # noqa: BLE001 — surfaced to the submitter as a flash message
+        if RESEND_API_KEY:
+            return _send_via_resend(subject, body)
+        if MAIL_SERVER:
+            return _send_via_smtp(subject, body)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        app.logger.error("Resend rejected the email (%s): %s", exc.code, detail)
+        return False
+    except Exception as exc:  # noqa: BLE001
         app.logger.error("Failed to send fault email: %s", exc)
         return False
+
+    app.logger.warning("No email provider configured. Would have sent:\n%s\n%s", subject, body)
+    return False
 
 
 # --- Routes: member-facing report flow ------------------------------------
@@ -166,7 +228,7 @@ def index():
 
 @app.route("/report/<machine_id>", methods=["GET", "POST"])
 def report(machine_id):
-    machine = Machine.query.get_or_404(machine_id)
+    machine = db.get_or_404(Machine, machine_id)
 
     if request.method == "POST":
         fault_type = request.form.get("fault_type", "Other")
@@ -219,7 +281,7 @@ def log_view():
 @app.route("/log/<int:report_id>/toggle", methods=["POST"])
 @login_required
 def toggle_report(report_id):
-    rpt = Report.query.get_or_404(report_id)
+    rpt = db.get_or_404(Report, report_id)
     if rpt.status == "open":
         rpt.status = "resolved"
         rpt.resolved_at = datetime.now(timezone.utc)
@@ -233,11 +295,11 @@ def toggle_report(report_id):
 
 
 # --- Routes: QR codes ----------------------------------------------------
-def _machine_report_url(machine_id: str) -> str:
+def _machine_report_url(machine_id):
     return f"{APP_BASE_URL}{url_for('report', machine_id=machine_id)}"
 
 
-def _qr_png_bytes(url: str) -> bytes:
+def _qr_png_bytes(url):
     img = qrcode.make(url, box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -262,10 +324,10 @@ def qr_index():
 @app.route("/qr/<machine_id>.png")
 @login_required
 def qr_png(machine_id):
-    machine = Machine.query.get_or_404(machine_id)
+    machine = db.get_or_404(Machine, machine_id)
     png = _qr_png_bytes(_machine_report_url(machine.id))
     return send_file(io.BytesIO(png), mimetype="image/png",
-                      download_name=f"{machine.id}-qr.png")
+                     download_name=f"{machine.id}-qr.png")
 
 
 # --- Admin: manage machine list -------------------------------------------
@@ -278,7 +340,7 @@ def machines_admin():
         location = request.form.get("location", "").strip()
         if not (machine_id and name and location):
             flash("All fields are required.")
-        elif Machine.query.get(machine_id):
+        elif db.session.get(Machine, machine_id):
             flash(f"Machine ID {machine_id} already exists.")
         else:
             db.session.add(Machine(id=machine_id, name=name, location=location))
@@ -290,61 +352,89 @@ def machines_admin():
     return render_template("machines.html", machines=machines)
 
 
+def import_machine_rows(rows):
+    """Add new machines and update existing ones (matched by ID).
+    Each row needs id, name and location. Returns (added, updated, skipped)."""
+    added = updated = skipped = 0
+    for row in rows:
+        machine_id = (row.get("id") or "").strip().upper()
+        name = (row.get("name") or "").strip()
+        location = (row.get("location") or "").strip()
+        if not (machine_id and name and location) or len(machine_id) > 20:
+            skipped += 1
+            continue
+        existing = db.session.get(Machine, machine_id)
+        if existing:
+            existing.name = name
+            existing.location = location
+            existing.active = True
+            updated += 1
+        else:
+            db.session.add(Machine(id=machine_id, name=name, location=location))
+            added += 1
+    db.session.commit()
+    return added, updated, skipped
+
+
+@app.route("/machines/import", methods=["POST"])
+@login_required
+def import_machines():
+    import csv as csv_mod
+    upload = request.files.get("csv_file")
+    if not upload or not upload.filename:
+        flash("Choose a CSV file first.")
+        return redirect(url_for("machines_admin"))
+    try:
+        text = upload.read().decode("utf-8-sig")
+        reader = csv_mod.DictReader(io.StringIO(text))
+        headers = {(h or "").strip().lower() for h in (reader.fieldnames or [])}
+        if not {"id", "name", "location"} <= headers:
+            flash("The CSV needs three columns named id, name and location.")
+            return redirect(url_for("machines_admin"))
+        rows = [{(k or "").strip().lower(): v for k, v in r.items()} for r in reader]
+    except Exception:  # noqa: BLE001
+        flash("That file couldn't be read as a CSV.")
+        return redirect(url_for("machines_admin"))
+
+    added, updated, skipped = import_machine_rows(rows)
+    msg = f"Import finished: {added} added, {updated} updated"
+    if skipped:
+        msg += f", {skipped} skipped (missing a value or ID over 20 characters)"
+    flash(msg + ".")
+    return redirect(url_for("machines_admin"))
+
+
 @app.route("/machines/<machine_id>/deactivate", methods=["POST"])
 @login_required
 def deactivate_machine(machine_id):
-    machine = Machine.query.get_or_404(machine_id)
+    machine = db.get_or_404(Machine, machine_id)
     machine.active = False
     db.session.commit()
     return redirect(url_for("machines_admin"))
 
 
-# --- CLI: seed some starter data ------------------------------------------
+# --- CLI ------------------------------------------------------------------
 @app.cli.command("seed")
 def seed():
-    """Populate the database with a starter machine list.
-    Usage: flask --app app seed
-    """
+    """Load the starter machine list. Usage: flask --app app seed"""
     seed_path = os.path.join(BASE_DIR, "scripts", "machines_seed.json")
     with open(seed_path) as f:
         rows = json.load(f)
     for row in rows:
-        if not Machine.query.get(row["id"]):
+        if not db.session.get(Machine, row["id"]):
             db.session.add(Machine(**row))
     db.session.commit()
     print(f"Seeded {len(rows)} machines.")
 
 
-import click  # noqa: E402
-
-
 @app.cli.command("import-csv")
 @click.argument("csv_path")
 def import_csv(csv_path):
-    """Bulk-load or update the full machine list from a CSV file.
-    CSV columns: id,name,location
-    Usage: flask --app app import-csv machines_full.csv
-    """
+    """Bulk-load or update machines from a CSV with columns id,name,location."""
     import csv as csv_mod
-    added, updated = 0, 0
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        for row in csv_mod.DictReader(f):
-            machine_id = row["id"].strip().upper()
-            existing = Machine.query.get(machine_id)
-            if existing:
-                existing.name = row["name"].strip()
-                existing.location = row["location"].strip()
-                existing.active = True
-                updated += 1
-            else:
-                db.session.add(Machine(
-                    id=machine_id,
-                    name=row["name"].strip(),
-                    location=row["location"].strip(),
-                ))
-                added += 1
-    db.session.commit()
-    print(f"Added {added}, updated {updated} machines from {csv_path}.")
+        added, updated, skipped = import_machine_rows(csv_mod.DictReader(f))
+    print(f"Added {added}, updated {updated}, skipped {skipped} from {csv_path}.")
 
 
 with app.app_context():
