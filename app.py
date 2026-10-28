@@ -349,7 +349,11 @@ def machines_admin():
         return redirect(url_for("machines_admin"))
 
     machines = Machine.query.order_by(Machine.location, Machine.name).all()
-    return render_template("machines.html", machines=machines)
+    report_counts = dict(
+        db.session.query(Report.machine_id, db.func.count(Report.id))
+        .group_by(Report.machine_id).all()
+    )
+    return render_template("machines.html", machines=machines, report_counts=report_counts)
 
 
 def import_machine_rows(rows):
@@ -410,6 +414,31 @@ def deactivate_machine(machine_id):
     machine = db.get_or_404(Machine, machine_id)
     machine.active = False
     db.session.commit()
+    return redirect(url_for("machines_admin"))
+
+
+@app.route("/machines/<machine_id>/activate", methods=["POST"])
+@login_required
+def activate_machine(machine_id):
+    machine = db.get_or_404(Machine, machine_id)
+    machine.active = True
+    db.session.commit()
+    return redirect(url_for("machines_admin"))
+
+
+@app.route("/machines/<machine_id>/delete", methods=["POST"])
+@login_required
+def delete_machine(machine_id):
+    """Remove a machine entirely, along with any fault reports logged
+    against it. Use Deactivate instead to keep the history."""
+    machine = db.get_or_404(Machine, machine_id)
+    removed = Report.query.filter_by(machine_id=machine.id).delete()
+    db.session.delete(machine)
+    db.session.commit()
+    msg = f"Deleted {machine.name}"
+    if removed:
+        msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
+    flash(msg + ".")
     return redirect(url_for("machines_admin"))
 
 
