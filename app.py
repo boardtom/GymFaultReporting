@@ -55,6 +55,9 @@ if db_url.startswith("postgres://"):  # SQLAlchemy wants postgresql://
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# Serverless Postgres (e.g. Neon) closes idle connections. Test each connection
+# before use and recycle old ones so the first request after a quiet spell works.
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 240}
 
 db = SQLAlchemy(app)
 
