@@ -57,11 +57,23 @@
             {% else %}<span class="badge open"><span class="dot"></span>Inactive</span>{% endif %}
           </td>
           <td>
-            {% if m.active %}
-            <form method="post" action="{{ url_for('deactivate_machine', machine_id=m.id) }}">
-              <button type="submit" class="row-btn">Deactivate</button>
-            </form>
-            {% endif %}
+            <div style="display:flex;gap:6px;">
+              {% if m.active %}
+              <form method="post" action="{{ url_for('deactivate_machine', machine_id=m.id) }}">
+                <button type="submit" class="row-btn">Deactivate</button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('activate_machine', machine_id=m.id) }}">
+                <button type="submit" class="row-btn">Reactivate</button>
+              </form>
+              {% endif %}
+              {% set n = report_counts.get(m.id, 0) %}
+              <form method="post" action="{{ url_for('delete_machine', machine_id=m.id) }}"
+                    data-msg="Delete {{ m.name }} permanently?{% if n %} This also deletes {{ n }} fault report{{ 's' if n != 1 }} logged against it.{% endif %} This cannot be undone."
+                    onsubmit="return confirm(this.dataset.msg);">
+                <button type="submit" class="row-btn" style="color:var(--red);">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% else %}
