@@ -12,18 +12,33 @@
     </nav>
   </div>
 
+  <div class="card" style="margin-bottom:18px;">
+    <h2 style="font-size:14px;margin:0 0 6px;">Upload a list of machines</h2>
+    <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px;">
+      CSV file with three columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>.
+      New IDs are added and existing IDs are updated, so you can upload again whenever the list changes.
+    </p>
+    <form method="post" action="{{ url_for('import_machines') }}" enctype="multipart/form-data" class="form-row" style="margin-bottom:0;">
+      <label class="field">
+        CSV file
+        <input type="file" name="csv_file" accept=".csv,text/csv" required>
+      </label>
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+  </div>
+
   <form method="post" class="form-row">
     <label class="field">
       Machine ID
-      <input type="text" name="id" placeholder="e.g. TM-08" required>
+      <input type="text" name="id" placeholder="e.g. FBX-TRD-02" required>
     </label>
     <label class="field">
       Name
-      <input type="text" name="name" placeholder="e.g. Treadmill 08" required>
+      <input type="text" name="name" placeholder="e.g. Treadmill 2" required>
     </label>
     <label class="field">
       Location
-      <input type="text" name="location" placeholder="e.g. Cardio zone" required>
+      <input type="text" name="location" placeholder="e.g. Fitbox" required>
     </label>
     <button type="submit" class="btn btn-primary">Add machine</button>
   </form>
