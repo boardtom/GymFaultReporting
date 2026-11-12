@@ -58,8 +58,12 @@
           <td data-key="location" data-v="{{ r.machine.location|lower }}">{{ r.machine.location }}</td>
           <td data-key="fault" data-v="{{ r.fault_type|lower }}">{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
           <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else 0) }}">
-            {% if r.safe_to_use in ('No', 'Not sure') %}<span style="color:var(--red);font-weight:700;">{{ r.safe_to_use }}</span>
-            {% else %}{{ r.safe_to_use or '&ndash;'|safe }}{% endif %}
+            <form method="post" action="{{ url_for('set_report_safe', report_id=r.id, status=status_filter) }}">
+              <select name="safe_to_use" class="sev-select{{ ' unset' if not r.safe_to_use }}" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
+                <option value="" {{ 'selected' if not r.safe_to_use }}>Not recorded</option>
+                {% for a in safe_answers %}<option value="{{ a }}" {{ 'selected' if r.safe_to_use == a }}>{{ a }}</option>{% endfor %}
+              </select>
+            </form>
           </td>
           <td data-key="severity" data-v="{{ {'High': 3, 'Medium': 2, 'Low': 1}.get(r.severity, 0) }}">
             <form method="post" action="{{ url_for('set_report_severity', report_id=r.id, status=status_filter) }}">

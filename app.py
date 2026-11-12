@@ -493,6 +493,7 @@ def log_view():
         open_count=open_count,
         resolved_count=total - open_count,
         severities=SEVERITIES,
+        safe_answers=SAFE_ANSWERS,
         unassessed=UNASSESSED,
         repeats=repeats,
         repeat_days=REPEAT_DAYS,
@@ -565,6 +566,19 @@ def set_report_severity(report_id):
     if severity not in SEVERITIES + [UNASSESSED]:
         abort(400)
     rpt.severity = severity
+    db.session.commit()
+    return redirect(url_for("log_view", status=request.args.get("status", "all")))
+
+
+@app.route("/log/<int:report_id>/safe", methods=["POST"])
+@login_required
+def set_report_safe(report_id):
+    """WI adds or corrects the 'safe to use?' answer on a report."""
+    rpt = db.get_or_404(Report, report_id)
+    answer = request.form.get("safe_to_use", "")
+    if answer and answer not in SAFE_ANSWERS:
+        abort(400)
+    rpt.safe_to_use = answer or None
     db.session.commit()
     return redirect(url_for("log_view", status=request.args.get("status", "all")))
 
