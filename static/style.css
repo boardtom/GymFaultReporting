@@ -223,5 +223,25 @@ td.fault-cell{min-width:210px;max-width:290px;}
 .more-btn[hidden]{display:none;}
 /* admin table pages use the full width of a PC screen */
 .app-shell.wide{max-width:1640px;padding-left:28px;padding-right:28px;}
-.app-shell.wide td.fault-cell{min-width:260px;max-width:520px;width:34%;}
+.app-shell.wide td.fault-cell{min-width:190px;max-width:300px;}
 .app-shell.wide .fault-details{-webkit-line-clamp:4;}
+
+/* ---- report progress ---- */
+.badge.prog{background:var(--lightblue);color:var(--navy);}
+tr.row-oos .badge.prog{background:#fff;border:1px solid var(--navy);}
+.prog-note{font-size:12.5px;margin-top:5px;line-height:1.4;}
+.prog-date{font-size:11.5px;color:var(--text-muted);}
+.prog-due{font-size:12px;font-weight:700;margin-top:4px;color:var(--navy);}
+.prog-due.overdue{color:var(--red);}
+details.upd{margin-top:6px;}
+details.upd>summary{list-style:none;cursor:pointer;display:inline-block;}
+details.upd>summary::-webkit-details-marker{display:none;}
+.upd-form{margin-top:8px;display:grid;gap:8px;min-width:230px;padding:10px;border:1px solid var(--border);border-radius:10px;background:#fff;}
+.upd-form label{display:block;font-size:12px;font-weight:700;color:var(--text-muted);}
+.upd-form select,.upd-form textarea,.upd-form input{width:100%;margin-top:3px;font:inherit;font-size:13px;font-weight:400;border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--navy);background:#fff;}
+.upd-form .btn{width:auto;justify-self:start;padding:8px 14px;font-size:13px;}
+.upd-hist{margin:10px 0 0;padding:0;list-style:none;border-left:2px solid var(--border);}
+.upd-hist li{padding:0 0 8px 10px;font-size:12.5px;}
+
+.progress-cell{min-width:200px;max-width:250px;}
+.app-shell.wide .badge.prog{white-space:normal;line-height:1.3;}

@@ -135,6 +135,17 @@ UNASSESSED = "Unassessed"
 # What the member is asked instead: an observation, not a rating.
 SAFE_ANSWERS = ["Yes", "No", "Not sure"]
 YES_NO = ["Yes", "No"]
+# Where a report has got to once WI has looked at it. Order matters: it is the sort order.
+PROGRESS_NEW = "New"
+PROGRESS_REVIEWED = "Reviewed by WI"
+PROGRESS = [
+    PROGRESS_NEW,
+    PROGRESS_REVIEWED,
+    "Gym Gear contacted",
+    "Gym Gear visited, may need to return",
+    "Awaiting parts",
+    "Monitoring",
+]
 
 
 # --- Models ---------------------------------------------------------------
@@ -160,12 +171,17 @@ class Report(db.Model):
     safe_to_use = db.Column(db.String(10), nullable=True)
     # "Have you placed a red out of order hang tag on the machine?" (Yes | No), answered by the member.
     hang_tag = db.Column(db.String(3), nullable=True)
+    # Latest progress step, set by WI (see PROGRESS). Every change is also kept in ReportUpdate.
+    progress = db.Column(db.String(60), nullable=False, default=PROGRESS_NEW)
+    follow_up = db.Column(db.Date, nullable=True)           # optional "chase by" date
     details = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(10), nullable=False, default="open")  # open | resolved
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     resolved_at = db.Column(db.DateTime, nullable=True)
 
     machine = db.relationship("Machine")
+    updates = db.relationship("ReportUpdate", order_by="ReportUpdate.created_at.desc()",
+                              cascade="all, delete-orphan", backref="report")
 
 
 class ServiceRecord(db.Model):
@@ -181,6 +197,16 @@ class ServiceRecord(db.Model):
     notes = db.Column(db.Text, nullable=True)
 
     machine = db.relationship("Machine")
+
+
+class ReportUpdate(db.Model):
+    """One entry in a report's progress history, e.g. 'Gym Gear contacted'."""
+    id = db.Column(db.Integer, primary_key=True)
+    report_id = db.Column(db.Integer, db.ForeignKey("report.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    status = db.Column(db.String(60), nullable=False)
+    note = db.Column(db.Text, nullable=True)
+    follow_up = db.Column(db.Date, nullable=True)
 
 
 class AppliedUpdate(db.Model):
@@ -266,8 +292,8 @@ def login_required(view):
 
 
 def new_reports_query():
-    """Reports nobody at WI has reviewed yet: still open, severity not set."""
-    return Report.query.filter(Report.status == "open", Report.severity.notin_(SEVERITIES))
+    """Reports nobody at WI has reviewed yet: still open and progress still 'New'."""
+    return Report.query.filter(Report.status == "open", Report.progress == PROGRESS_NEW)
 
 
 @app.context_processor
@@ -496,6 +522,8 @@ def log_view():
         resolved_count=total - open_count,
         severities=SEVERITIES,
         unassessed=UNASSESSED,
+        progress_options=PROGRESS,
+        today=to_uk(utcnow()).date(),
         repeats=repeats,
         repeat_days=REPEAT_DAYS,
         show_new_prompt=session.pop("new_prompt", False),
@@ -532,13 +560,16 @@ def export_log():
         rows.append([
             to_uk(r.created_at).strftime("%Y-%m-%d %H:%M"), r.machine.id, r.machine.name,
             r.machine.location, r.fault_type, r.details, r.safe_to_use or "", r.hang_tag or "",
-            r.severity, r.status,
+            r.severity, r.status, r.progress,
+            (r.updates[0].note or "") if r.updates else "",
+            r.follow_up.strftime("%Y-%m-%d") if r.follow_up else "",
             to_uk(r.resolved_at).strftime("%Y-%m-%d %H:%M") if r.resolved_at else "",
         ])
     return csv_response(
         f"fault-log-{to_uk(utcnow()).strftime('%Y-%m-%d')}.csv",
         ["Reported (UK time)", "Machine ID", "Machine", "Location", "Fault", "Details",
-         "Safe to use (older reports only)", "Hang tag placed", "Severity", "Status", "Resolved (UK time)"],
+         "Safe to use (older reports only)", "Hang tag placed", "Severity", "Status", "Progress", "Latest update",
+         "Follow up by", "Resolved (UK time)"],
         rows)
 
 
@@ -558,6 +589,18 @@ def toggle_report(report_id):
     return redirect(url_for("log_view", status=request.args.get("status", "all")))
 
 
+def _log_url(report_id):
+    """Back to the log on the same tab, scrolled to the report just changed."""
+    return url_for("log_view", status=request.args.get("status", "all")) + f"#report-{report_id}"
+
+
+def _mark_reviewed(rpt, note):
+    """First touch by WI: move a 'New' report on and keep a note of why."""
+    if rpt.progress == PROGRESS_NEW:
+        rpt.progress = PROGRESS_REVIEWED
+        db.session.add(ReportUpdate(report_id=rpt.id, status=PROGRESS_REVIEWED, note=note))
+
+
 @app.route("/log/<int:report_id>/severity", methods=["POST"])
 @login_required
 def set_report_severity(report_id):
@@ -567,8 +610,33 @@ def set_report_severity(report_id):
     if severity not in SEVERITIES + [UNASSESSED]:
         abort(400)
     rpt.severity = severity
+    if severity in SEVERITIES:
+        _mark_reviewed(rpt, f"Severity set to {severity}.")
     db.session.commit()
-    return redirect(url_for("log_view", status=request.args.get("status", "all")))
+    return redirect(_log_url(rpt.id))
+
+
+@app.route("/log/<int:report_id>/update", methods=["POST"])
+@login_required
+def add_report_update(report_id):
+    """WI records where a report has got to, e.g. 'Gym Gear contacted'."""
+    rpt = db.get_or_404(Report, report_id)
+    status = request.form.get("status", "")
+    if status not in PROGRESS:
+        abort(400)
+    note = (request.form.get("note") or "").strip()[:1000] or None
+    follow_up = None
+    raw = (request.form.get("follow_up") or "").strip()
+    if raw:
+        try:
+            follow_up = date.fromisoformat(raw)
+        except ValueError:
+            abort(400)
+    rpt.progress = status
+    rpt.follow_up = follow_up
+    db.session.add(ReportUpdate(report_id=rpt.id, status=status, note=note, follow_up=follow_up))
+    db.session.commit()
+    return redirect(_log_url(rpt.id))
 
 
 @app.route("/log/<int:report_id>/delete", methods=["POST"])
@@ -723,6 +791,9 @@ def delete_machine(machine_id):
     """Remove a machine entirely, along with any fault reports logged
     against it. Use Deactivate instead to keep the history."""
     machine = db.get_or_404(Machine, machine_id)
+    report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
+    if report_ids:
+        ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).delete(synchronize_session=False)
     removed = Report.query.filter_by(machine_id=machine.id).delete()
     ServiceRecord.query.filter_by(machine_id=machine.id).delete()
     OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
@@ -773,6 +844,8 @@ def set_out_of_service(machine_id):
             reason=reason or f"Taken out of service from the {where}."))
     machine.out_of_service = True
     machine.out_of_service_note = note
+    for rpt in Report.query.filter_by(machine_id=machine.id, status="open", progress=PROGRESS_NEW):
+        _mark_reviewed(rpt, "Machine taken out of service.")
     db.session.commit()
     flash(f"{machine.name} is now marked out of service.")
     return redirect(_back_to_log_or_machines())
@@ -849,7 +922,15 @@ def out_of_service_view():
                .order_by(OutOfServiceLog.started_at).all() if e.machine.out_of_service]
     history = (OutOfServiceLog.query.filter(OutOfServiceLog.ended_at.isnot(None))
                .order_by(OutOfServiceLog.ended_at.desc()).all())
-    return render_template("out_of_service.html", current=current, history=history)
+    latest = {}
+    for e in current:
+        rpt = (Report.query.filter_by(machine_id=e.machine_id, status="open")
+               .filter(Report.progress != PROGRESS_NEW)
+               .order_by(Report.created_at.desc()).first())
+        if rpt:
+            latest[e.machine_id] = rpt
+    return render_template("out_of_service.html", current=current, history=history,
+                           latest=latest, today=to_uk(utcnow()).date())
 
 
 @app.route("/out-of-service/export.csv")
@@ -996,6 +1077,24 @@ def upgrade_database():
                 conn.execute(text("ALTER TABLE report ADD COLUMN safe_to_use VARCHAR(10)"))
         except Exception as exc:  # noqa: BLE001
             app.logger.warning("Could not add report.safe_to_use: %s", exc)
+
+    for column, ddl in (("progress", "VARCHAR(60) NOT NULL DEFAULT 'New'"), ("follow_up", "DATE")):
+        if column not in report_cols:
+            try:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE report ADD COLUMN {column} {ddl}"))
+            except Exception as exc:  # noqa: BLE001
+                app.logger.warning("Could not add report.%s: %s", column, exc)
+    try:
+        # Reports that already have a severity were looked at before progress existed.
+        n = Report.query.filter(Report.progress == PROGRESS_NEW, Report.severity.in_(SEVERITIES)) \
+                  .update({"progress": PROGRESS_REVIEWED}, synchronize_session=False)
+        db.session.commit()
+        if n:
+            app.logger.warning("Marked %s existing assessed reports as reviewed", n)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not backfill report progress: %s", exc)
 
     if "hang_tag" not in report_cols:
         try:

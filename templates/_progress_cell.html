@@ -1,0 +1,28 @@
+{# Needs: r (report), progress_options, today, status_filter #}
+<div><span class="badge {{ 'open' if r.progress == 'New' else 'prog' }}"><span class="dot"></span>{{ r.progress }}</span></div>
+{% if r.updates and r.updates[0].note %}<div class="prog-note">{{ r.updates[0].note }} <span class="prog-date">{{ r.updates[0].created_at|uk('%d %b') }}</span></div>{% endif %}
+{% if r.follow_up and r.status == 'open' %}
+<div class="prog-due{{ ' overdue' if r.follow_up <= today }}">Follow up by {{ r.follow_up.strftime('%d %b') }}{% if r.follow_up < today %} (overdue){% elif r.follow_up == today %} (today){% endif %}</div>
+{% endif %}
+<details class="upd">
+  <summary class="row-btn">Update{% if r.updates|length > 1 %} ({{ r.updates|length }}){% endif %}</summary>
+  <form method="post" action="{{ url_for('add_report_update', report_id=r.id, status=status_filter) }}" class="upd-form">
+    <label>Progress
+      <select name="status">
+        {% for p in progress_options %}{% if p != 'New' or r.progress == 'New' %}<option value="{{ p }}" {{ 'selected' if (r.progress == p and p != 'New') or (r.progress == 'New' and p == 'Reviewed by WI') }}>{{ p }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>Note
+      <textarea name="note" rows="2" maxlength="1000" placeholder="e.g. Gym Gear called, engineer booked for Tuesday"></textarea>
+    </label>
+    <label>Follow up by (optional)
+      <input type="date" name="follow_up">
+    </label>
+    <button type="submit" class="btn btn-primary">Save update</button>
+  </form>
+  {% if r.updates %}
+  <ol class="upd-hist">
+    {% for u in r.updates %}<li><strong>{{ u.status }}</strong> <span class="prog-date">{{ u.created_at|uk('%d %b %H:%M') }}</span>{% if u.note %}<div>{{ u.note }}</div>{% endif %}{% if u.follow_up %}<div class="prog-date">Follow up by {{ u.follow_up.strftime('%d %b') }}</div>{% endif %}</li>{% endfor %}
+  </ol>
+  {% endif %}
+</details>

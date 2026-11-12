@@ -41,6 +41,9 @@
     <label class="field" style="margin-bottom:0;">Severity
       <select id="f-sev"><option value="">All</option><option value="3">High</option><option value="2">Medium</option><option value="1">Low</option><option value="0">Not set</option></select>
     </label>
+    <label class="field" style="margin-bottom:0;">Progress
+      <select id="f-prog"><option value="">All</option>{% for p in progress_options %}<option value="{{ loop.index0 }}">{{ p }}</option>{% endfor %}<option value="due">Follow-up due</option></select>
+    </label>
     <label class="field" style="margin-bottom:0;">In use?
       <select id="f-use"><option value="">All</option><option value="1">Out of service</option><option value="0">In service</option></select>
     </label>
@@ -62,16 +65,17 @@
           <th class="sortable" data-key="machine">Machine</th>
           <th class="sortable" data-key="location">Location</th>
           <th class="sortable" data-key="fault">Fault</th>
-          <th class="sortable" data-key="tag" data-type="num">Hang tag placed?</th>
+          <th class="sortable" data-key="tag" data-type="num">Tag placed?</th>
           <th class="sortable" data-key="severity" data-type="num">Severity</th>
           <th class="sortable" data-key="inuse" data-type="num">In use?</th>
+          <th class="sortable" data-key="progress" data-type="num">Progress</th>
           <th class="sortable" data-key="status" data-type="num">Status</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for r in reports %}
-        <tr{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
+        <tr id="report-{{ r.id }}"{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" data-key="date" data-v="{{ r.created_at.strftime('%Y%m%d%H%M%S') }}">{{ r.created_at|uk('%d %b %H:%M') }}</td>
           <td data-key="machine" data-v="{{ r.machine.name|lower }}" data-q="{{ (r.machine.name ~ ' ' ~ r.machine.id ~ ' ' ~ r.fault_type ~ ' ' ~ (r.details or ''))|lower }}">{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
             {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
@@ -98,6 +102,9 @@
             </form>
             {% endif %}
           </td>
+          <td class="progress-cell" data-key="progress" data-v="{{ progress_options.index(r.progress) if r.progress in progress_options else 0 }}" data-due="{{ 1 if (r.follow_up and r.status == 'open' and r.follow_up <= today) else 0 }}">
+            {% include "_progress_cell.html" %}
+          </td>
           <td data-key="status" data-v="{{ 1 if r.status == 'open' else 0 }}">
             {% if r.status == 'open' %}
               <span class="badge open"><span class="dot"></span>Open</span>
@@ -119,7 +126,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="empty-row">{{ 'Nothing new to review.' if status_filter == 'new' else ('No repeat faults in the last ' ~ repeat_days ~ ' days.' if status_filter == 'repeat' else 'No reports in this view.') }}</td></tr>
+        <tr><td colspan="10" class="empty-row">{{ 'Nothing new to review.' if status_filter == 'new' else ('No repeat faults in the last ' ~ repeat_days ~ ' days.' if status_filter == 'repeat' else 'No reports in this view.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -171,14 +178,14 @@
       var open = d.classList.toggle('open'); b.textContent = open ? 'Show less' : 'Show more';
     });
   });
-  var F = {tag: 'f-tag', severity: 'f-sev', inuse: 'f-use'}, fl = document.getElementById('f-loc'),
+  var F = {tag: 'f-tag', progress: 'f-prog', severity: 'f-sev', inuse: 'f-use'}, fl = document.getElementById('f-loc'),
       fq = document.getElementById('f-q'), fc = document.getElementById('f-count');
   function cell(r, k) { var c = r.querySelector('td[data-key="' + k + '"]'); return c ? c.dataset.v : ''; }
   function applyFilters() {
     var all = rows(), n = 0, q = fq.value.trim().toLowerCase();
     all.forEach(function (r) {
       var show = true;
-      Object.keys(F).forEach(function (k) { var v = document.getElementById(F[k]).value; if (v !== '' && cell(r, k) !== v) show = false; });
+      Object.keys(F).forEach(function (k) { var v = document.getElementById(F[k]).value; if (v === '') return; if (k === 'progress' && v === 'due') { var pc = r.querySelector('td[data-key="progress"]'); if (!pc || pc.dataset.due !== '1') show = false; } else if (cell(r, k) !== v) show = false; });
       if (fl.value && cell(r, 'location') !== fl.value) show = false;
       if (q && r.querySelector('td[data-q]').dataset.q.indexOf(q) === -1) show = false;
       r.style.display = show ? '' : 'none';
@@ -186,12 +193,12 @@
     });
     fc.textContent = all.length ? 'Showing ' + n + ' of ' + all.length + ' reports in this tab' : '';
   }
-  ['f-tag', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).addEventListener('change', applyFilters); });
+  ['f-tag', 'f-prog', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).addEventListener('change', applyFilters); });
   fq.addEventListener('input', applyFilters);
   document.getElementById('f-clear').addEventListener('click', function () {
-    ['f-tag', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).value = ''; }); fq.value = ''; applyFilters();
+    ['f-tag', 'f-prog', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).value = ''; }); fq.value = ''; applyFilters();
   });
-  var FK = 'faultlog-filters', ids = ['f-tag', 'f-sev', 'f-use', 'f-loc', 'f-q'];
+  var FK = 'faultlog-filters', ids = ['f-tag', 'f-prog', 'f-sev', 'f-use', 'f-loc', 'f-q'];
   try { var sv = JSON.parse(sessionStorage.getItem(FK) || '{}'); ids.forEach(function (id) { var el = document.getElementById(id); if (sv[id] !== undefined) el.value = sv[id]; if (el.value !== sv[id] && id !== 'f-q') el.value = ''; }); } catch (e) {}
   function saveFilters() { try { var o = {}; ids.forEach(function (id) { o[id] = document.getElementById(id).value; }); sessionStorage.setItem(FK, JSON.stringify(o)); } catch (e) {} }
   ids.forEach(function (id) { document.getElementById(id).addEventListener(id === 'f-q' ? 'input' : 'change', saveFilters); });

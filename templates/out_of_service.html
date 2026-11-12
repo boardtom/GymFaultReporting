@@ -10,7 +10,7 @@
   <h2 class="section-title">Out of service now ({{ current|length }})</h2>
   <div class="table-wrap" style="margin-bottom:28px;">
     <table>
-      <thead><tr><th>Machine</th><th>Location</th><th>Out since</th><th>Reason</th><th></th></tr></thead>
+      <thead><tr><th>Machine</th><th>Location</th><th>Out since</th><th>Reason</th><th>Latest update</th><th></th></tr></thead>
       <tbody>
         {% for e in current %}
         <tr class="row-oos">
@@ -18,10 +18,19 @@
           <td>{{ e.machine.location }}</td>
           <td>{{ e.started_at|uk }}<div style="color:var(--text-muted);font-size:12px;">{{ duration_text(e.started_at) }} so far</div></td>
           <td style="max-width:46ch;">{{ e.reason or "" }}</td>
+          <td style="max-width:38ch;">
+            {% set lr = latest.get(e.machine.id) %}
+            {% if lr %}
+            <span class="badge prog"><span class="dot"></span>{{ lr.progress }}</span>
+            {% if lr.updates and lr.updates[0].note %}<div class="prog-note">{{ lr.updates[0].note }} <span class="prog-date">{{ lr.updates[0].created_at|uk('%d %b') }}</span></div>{% endif %}
+            {% if lr.follow_up %}<div class="prog-due{{ ' overdue' if lr.follow_up <= today }}">Follow up by {{ lr.follow_up.strftime('%d %b') }}{% if lr.follow_up < today %} (overdue){% endif %}</div>{% endif %}
+            <a href="{{ url_for('log_view', status='all') }}#report-{{ lr.id }}" class="prog-date">Open in fault log</a>
+            {% else %}<span style="color:var(--text-muted);font-size:12px;">No updates yet</span>{% endif %}
+          </td>
           <td><a href="{{ url_for('set_back_in_service', machine_id=e.machine.id, next=request.path) }}" class="row-btn">Put back in service</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="empty-row">Nothing is out of service.</td></tr>
+        <tr><td colspan="6" class="empty-row">Nothing is out of service.</td></tr>
         {% endfor %}
       </tbody>
     </table>
