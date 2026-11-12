@@ -134,6 +134,7 @@ SEVERITIES = ["Low", "Medium", "High"]
 UNASSESSED = "Unassessed"
 # What the member is asked instead: an observation, not a rating.
 SAFE_ANSWERS = ["Yes", "No", "Not sure"]
+YES_NO = ["Yes", "No"]
 
 
 # --- Models ---------------------------------------------------------------
@@ -155,8 +156,10 @@ class Report(db.Model):
     fault_type = db.Column(db.String(80), nullable=False)
     # Set by WI in the fault log. "Unassessed" until someone has triaged it.
     severity = db.Column(db.String(10), nullable=False, default=UNASSESSED)
-    # The member's answer to "Is the equipment safe to use?" (Yes | No | Not sure).
+    # Legacy: older reports hold the member's answer to "Is the equipment safe to use?". No longer asked.
     safe_to_use = db.Column(db.String(10), nullable=True)
+    # "Have you placed a red out of order hang tag on the machine?" (Yes | No), answered by the member.
+    hang_tag = db.Column(db.String(3), nullable=True)
     details = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(10), nullable=False, default="open")  # open | resolved
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -332,13 +335,12 @@ def _local_time(dt):
 
 def build_fault_email(report):
     """Return (subject, plain-text body) for a fault alert."""
-    prefix = "[PRIORITY] " if report.safe_to_use in ("No", "Not sure") else ""
-    subject = f"{prefix}Equipment fault: {report.machine.name} ({report.machine.id})"
+    subject = f"Equipment fault: {report.machine.name} ({report.machine.id})"
     body = (
         f"Machine: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
         f"Fault: {report.fault_type}\n"
-        f"Safe to use (member's view): {report.safe_to_use or 'Not asked'}\n"
+        f"Red out of order hang tag placed by member: {report.hang_tag or 'Not asked'}\n"
         f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
         + "\nSeverity has not been set. Please review, set the severity in the fault log\n"
@@ -420,17 +422,17 @@ def report(machine_id):
 
     if request.method == "POST":
         fault_type = request.form.get("fault_type", "Other")
-        safe_to_use = request.form.get("safe_to_use", "Not sure")
+        hang_tag = request.form.get("hang_tag", "")
         details = request.form.get("details", "").strip()
 
-        if fault_type not in FAULT_TYPES or safe_to_use not in SAFE_ANSWERS:
+        if fault_type not in FAULT_TYPES or hang_tag not in YES_NO:
             abort(400)
 
         rpt = Report(
             machine_id=machine.id,
             fault_type=fault_type,
             severity=UNASSESSED,
-            safe_to_use=safe_to_use,
+            hang_tag=hang_tag,
             details=details or None,
         )
         db.session.add(rpt)
@@ -440,7 +442,7 @@ def report(machine_id):
         return render_template("confirm.html", machine=machine, email_sent=email_sent)
 
     return render_template(
-        "report.html", machine=machine, fault_types=FAULT_TYPES, safe_answers=SAFE_ANSWERS
+        "report.html", machine=machine, fault_types=FAULT_TYPES, yes_no=YES_NO
     )
 
 
@@ -468,8 +470,8 @@ def reports_for_filter(status_filter):
         query = query.filter(Report.machine_id.in_(ids) if ids else false(),
                              Report.created_at >= cutoff)
     reports = query.order_by(Report.created_at.desc()).all()
-    if status_filter == "new":      # possible safety concerns first
-        reports.sort(key=lambda r: r.safe_to_use not in ("No", "Not sure"))
+    if status_filter == "new":      # machines the member has already tagged first
+        reports.sort(key=lambda r: r.hang_tag != "Yes")
     if status_filter == "repeat":   # group by machine
         reports.sort(key=lambda r: r.machine_id)
     return reports
@@ -493,7 +495,6 @@ def log_view():
         open_count=open_count,
         resolved_count=total - open_count,
         severities=SEVERITIES,
-        safe_answers=SAFE_ANSWERS,
         unassessed=UNASSESSED,
         repeats=repeats,
         repeat_days=REPEAT_DAYS,
@@ -530,14 +531,14 @@ def export_log():
     for r in reports_for_filter(status_filter):
         rows.append([
             to_uk(r.created_at).strftime("%Y-%m-%d %H:%M"), r.machine.id, r.machine.name,
-            r.machine.location, r.fault_type, r.details, r.safe_to_use or "",
+            r.machine.location, r.fault_type, r.details, r.safe_to_use or "", r.hang_tag or "",
             r.severity, r.status,
             to_uk(r.resolved_at).strftime("%Y-%m-%d %H:%M") if r.resolved_at else "",
         ])
     return csv_response(
         f"fault-log-{to_uk(utcnow()).strftime('%Y-%m-%d')}.csv",
         ["Reported (UK time)", "Machine ID", "Machine", "Location", "Fault", "Details",
-         "Safe to use (member's answer)", "Severity", "Status", "Resolved (UK time)"],
+         "Safe to use (older reports only)", "Hang tag placed", "Severity", "Status", "Resolved (UK time)"],
         rows)
 
 
@@ -566,19 +567,6 @@ def set_report_severity(report_id):
     if severity not in SEVERITIES + [UNASSESSED]:
         abort(400)
     rpt.severity = severity
-    db.session.commit()
-    return redirect(url_for("log_view", status=request.args.get("status", "all")))
-
-
-@app.route("/log/<int:report_id>/safe", methods=["POST"])
-@login_required
-def set_report_safe(report_id):
-    """WI adds or corrects the 'safe to use?' answer on a report."""
-    rpt = db.get_or_404(Report, report_id)
-    answer = request.form.get("safe_to_use", "")
-    if answer and answer not in SAFE_ANSWERS:
-        abort(400)
-    rpt.safe_to_use = answer or None
     db.session.commit()
     return redirect(url_for("log_view", status=request.args.get("status", "all")))
 
@@ -1008,6 +996,13 @@ def upgrade_database():
                 conn.execute(text("ALTER TABLE report ADD COLUMN safe_to_use VARCHAR(10)"))
         except Exception as exc:  # noqa: BLE001
             app.logger.warning("Could not add report.safe_to_use: %s", exc)
+
+    if "hang_tag" not in report_cols:
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE report ADD COLUMN hang_tag VARCHAR(3)"))
+        except Exception as exc:  # noqa: BLE001
+            app.logger.warning("Could not add report.hang_tag: %s", exc)
 
     # Machines already out of service before the stoppage history existed.
     try:

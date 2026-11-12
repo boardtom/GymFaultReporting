@@ -35,8 +35,8 @@
   </div>
 
   <div class="form-row filter-bar" style="margin-bottom:12px;align-items:flex-end;">
-    <label class="field" style="margin-bottom:0;">Safe to use?
-      <select id="f-safe"><option value="">All</option><option value="2">No</option><option value="1">Not sure</option><option value="0">Yes</option></select>
+    <label class="field" style="margin-bottom:0;">Hang tag placed?
+      <select id="f-tag"><option value="">All</option><option value="1">Yes</option><option value="0">No</option></select>
     </label>
     <label class="field" style="margin-bottom:0;">Severity
       <select id="f-sev"><option value="">All</option><option value="3">High</option><option value="2">Medium</option><option value="1">Low</option><option value="0">Not set</option></select>
@@ -62,7 +62,7 @@
           <th class="sortable" data-key="machine">Machine</th>
           <th class="sortable" data-key="location">Location</th>
           <th class="sortable" data-key="fault">Fault</th>
-          <th class="sortable" data-key="safe" data-type="num">Safe to use?</th>
+          <th class="sortable" data-key="tag" data-type="num">Hang tag placed?</th>
           <th class="sortable" data-key="severity" data-type="num">Severity</th>
           <th class="sortable" data-key="inuse" data-type="num">In use?</th>
           <th class="sortable" data-key="status" data-type="num">Status</th>
@@ -77,14 +77,7 @@
             {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
           <td data-key="location" data-v="{{ r.machine.location|lower }}">{{ r.machine.location }}</td>
           <td class="fault-cell" data-key="fault" data-v="{{ r.fault_type|lower }}"><strong>{{ r.fault_type }}</strong>{% if r.details %}<div class="fault-details">{{ r.details }}</div><button type="button" class="more-btn" hidden>Show more</button>{% endif %}</td>
-          <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else (0 if r.safe_to_use == 'Yes' else -1)) }}">
-            <form method="post" action="{{ url_for('set_report_safe', report_id=r.id, status=status_filter) }}">
-              <select name="safe_to_use" class="sev-select" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
-                {% if not r.safe_to_use %}<option value="" selected disabled>Select</option>{% endif %}
-                {% for a in safe_answers %}<option value="{{ a }}" {{ 'selected' if r.safe_to_use == a }}>{{ a }}</option>{% endfor %}
-              </select>
-            </form>
-          </td>
+          <td data-key="tag" data-v="{{ 1 if r.hang_tag == 'Yes' else (0 if r.hang_tag == 'No' else -1) }}">{% if r.hang_tag == 'Yes' %}<span class="badge open"><span class="dot"></span>Yes</span>{% else %}{{ r.hang_tag or '&ndash;'|safe }}{% endif %}</td>
           <td data-key="severity" data-v="{{ {'High': 3, 'Medium': 2, 'Low': 1}.get(r.severity, 0) }}">
             <form method="post" action="{{ url_for('set_report_severity', report_id=r.id, status=status_filter) }}">
               <select name="severity" class="sev-select{{ ' unset' if r.severity not in severities }}" onchange="this.form.submit()" aria-label="Severity">
@@ -178,7 +171,7 @@
       var open = d.classList.toggle('open'); b.textContent = open ? 'Show less' : 'Show more';
     });
   });
-  var F = {safe: 'f-safe', severity: 'f-sev', inuse: 'f-use'}, fl = document.getElementById('f-loc'),
+  var F = {tag: 'f-tag', severity: 'f-sev', inuse: 'f-use'}, fl = document.getElementById('f-loc'),
       fq = document.getElementById('f-q'), fc = document.getElementById('f-count');
   function cell(r, k) { var c = r.querySelector('td[data-key="' + k + '"]'); return c ? c.dataset.v : ''; }
   function applyFilters() {
@@ -193,12 +186,12 @@
     });
     fc.textContent = all.length ? 'Showing ' + n + ' of ' + all.length + ' reports in this tab' : '';
   }
-  ['f-safe', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).addEventListener('change', applyFilters); });
+  ['f-tag', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).addEventListener('change', applyFilters); });
   fq.addEventListener('input', applyFilters);
   document.getElementById('f-clear').addEventListener('click', function () {
-    ['f-safe', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).value = ''; }); fq.value = ''; applyFilters();
+    ['f-tag', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).value = ''; }); fq.value = ''; applyFilters();
   });
-  var FK = 'faultlog-filters', ids = ['f-safe', 'f-sev', 'f-use', 'f-loc', 'f-q'];
+  var FK = 'faultlog-filters', ids = ['f-tag', 'f-sev', 'f-use', 'f-loc', 'f-q'];
   try { var sv = JSON.parse(sessionStorage.getItem(FK) || '{}'); ids.forEach(function (id) { var el = document.getElementById(id); if (sv[id] !== undefined) el.value = sv[id]; if (el.value !== sv[id] && id !== 'f-q') el.value = ''; }); } catch (e) {}
   function saveFilters() { try { var o = {}; ids.forEach(function (id) { o[id] = document.getElementById(id).value; }); sessionStorage.setItem(FK, JSON.stringify(o)); } catch (e) {} }
   ids.forEach(function (id) { document.getElementById(id).addEventListener(id === 'f-q' ? 'input' : 'change', saveFilters); });

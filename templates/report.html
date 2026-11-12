@@ -41,11 +41,12 @@
         </label>
 
         <div class="field">
-          Is the equipment safe to use?
+          Have you placed a red out of order hang tag on the machine?
+          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">Please hang a red out of order tag on the machine until we have reviewed your report.</span>
           <div class="severity-row">
-            {% for ans in safe_answers %}
+            {% for ans in yes_no %}
             <label>
-              <input type="radio" name="safe_to_use" value="{{ ans }}" required>
+              <input type="radio" name="hang_tag" value="{{ ans }}" required>
               <span class="opt">{{ ans }}</span>
             </label>
             {% endfor %}
