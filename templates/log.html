@@ -34,6 +34,26 @@
   <a href="{{ url_for('export_log', status=status_filter) }}" class="row-btn" style="margin-top:4px;">Download this view (CSV)</a>
   </div>
 
+  <div class="form-row filter-bar" style="margin-bottom:12px;align-items:flex-end;">
+    <label class="field" style="margin-bottom:0;">Safe to use?
+      <select id="f-safe"><option value="">All</option><option value="2">No</option><option value="1">Not sure</option><option value="0">Yes / not recorded</option></select>
+    </label>
+    <label class="field" style="margin-bottom:0;">Severity
+      <select id="f-sev"><option value="">All</option><option value="3">High</option><option value="2">Medium</option><option value="1">Low</option><option value="0">Not set</option></select>
+    </label>
+    <label class="field" style="margin-bottom:0;">In use?
+      <select id="f-use"><option value="">All</option><option value="1">Out of service</option><option value="0">In service</option></select>
+    </label>
+    <label class="field" style="margin-bottom:0;">Location
+      <select id="f-loc"><option value="">All</option>{% for loc in reports|map(attribute='machine.location')|unique|sort %}<option value="{{ loc|lower }}">{{ loc }}</option>{% endfor %}</select>
+    </label>
+    <label class="field" style="flex:2;margin-bottom:0;">Search
+      <input type="search" id="f-q" placeholder="Machine, ID or fault text">
+    </label>
+    <button type="button" class="row-btn" id="f-clear" style="margin-bottom:2px;">Clear filters</button>
+  </div>
+  <p id="f-count" style="color:var(--text-muted);font-size:12.5px;margin:0 0 8px;"></p>
+
   <div class="table-wrap">
     <table>
       <thead>
@@ -53,7 +73,7 @@
         {% for r in reports %}
         <tr{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" data-key="date" data-v="{{ r.created_at.strftime('%Y%m%d%H%M%S') }}">{{ r.created_at|uk('%d %b %H:%M') }}</td>
-          <td data-key="machine" data-v="{{ r.machine.name|lower }}">{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
+          <td data-key="machine" data-v="{{ r.machine.name|lower }}" data-q="{{ (r.machine.name ~ ' ' ~ r.machine.id ~ ' ' ~ r.fault_type ~ ' ' ~ (r.details or ''))|lower }}">{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
             {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
           <td data-key="location" data-v="{{ r.machine.location|lower }}">{{ r.machine.location }}</td>
           <td class="fault-cell" data-key="fault" data-v="{{ r.fault_type|lower }}"><strong>{{ r.fault_type }}</strong>{% if r.details %}<div class="fault-details">{{ r.details }}</div><button type="button" class="more-btn" hidden>Show more</button>{% endif %}</td>
@@ -158,6 +178,32 @@
       var open = d.classList.toggle('open'); b.textContent = open ? 'Show less' : 'Show more';
     });
   });
+  var F = {safe: 'f-safe', severity: 'f-sev', inuse: 'f-use'}, fl = document.getElementById('f-loc'),
+      fq = document.getElementById('f-q'), fc = document.getElementById('f-count');
+  function cell(r, k) { var c = r.querySelector('td[data-key="' + k + '"]'); return c ? c.dataset.v : ''; }
+  function applyFilters() {
+    var all = rows(), n = 0, q = fq.value.trim().toLowerCase();
+    all.forEach(function (r) {
+      var show = true;
+      Object.keys(F).forEach(function (k) { var v = document.getElementById(F[k]).value; if (v !== '' && cell(r, k) !== v) show = false; });
+      if (fl.value && cell(r, 'location') !== fl.value) show = false;
+      if (q && r.querySelector('td[data-q]').dataset.q.indexOf(q) === -1) show = false;
+      r.style.display = show ? '' : 'none';
+      if (show) n++;
+    });
+    fc.textContent = all.length ? 'Showing ' + n + ' of ' + all.length + ' reports in this tab' : '';
+  }
+  ['f-safe', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).addEventListener('change', applyFilters); });
+  fq.addEventListener('input', applyFilters);
+  document.getElementById('f-clear').addEventListener('click', function () {
+    ['f-safe', 'f-sev', 'f-use', 'f-loc'].forEach(function (id) { document.getElementById(id).value = ''; }); fq.value = ''; applyFilters();
+  });
+  var FK = 'faultlog-filters', ids = ['f-safe', 'f-sev', 'f-use', 'f-loc', 'f-q'];
+  try { var sv = JSON.parse(sessionStorage.getItem(FK) || '{}'); ids.forEach(function (id) { var el = document.getElementById(id); if (sv[id] !== undefined) el.value = sv[id]; if (el.value !== sv[id] && id !== 'f-q') el.value = ''; }); } catch (e) {}
+  function saveFilters() { try { var o = {}; ids.forEach(function (id) { o[id] = document.getElementById(id).value; }); sessionStorage.setItem(FK, JSON.stringify(o)); } catch (e) {} }
+  ids.forEach(function (id) { document.getElementById(id).addEventListener(id === 'f-q' ? 'input' : 'change', saveFilters); });
+  document.getElementById('f-clear').addEventListener('click', saveFilters);
+  applyFilters();
   try { var s = (localStorage.getItem(KEY) || '').split(':'); if (s[0] && s[1]) sortBy(s[0], s[1]); } catch (e) {}
 })();
 </script>
