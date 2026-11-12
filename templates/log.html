@@ -37,21 +37,31 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Reported</th><th>Machine</th><th>Location</th><th>Fault</th><th>Safe to use?</th><th>Severity (set by WI)</th><th>Machine in use?</th><th>Status</th><th></th></tr>
+        <tr>
+          <th class="sortable" data-key="date" data-type="num">Reported</th>
+          <th class="sortable" data-key="machine">Machine</th>
+          <th class="sortable" data-key="location">Location</th>
+          <th class="sortable" data-key="fault">Fault</th>
+          <th class="sortable" data-key="safe" data-type="num">Safe to use?</th>
+          <th class="sortable" data-key="severity" data-type="num">Severity</th>
+          <th class="sortable" data-key="inuse" data-type="num">In use?</th>
+          <th class="sortable" data-key="status" data-type="num">Status</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for r in reports %}
         <tr{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
-          <td class="mono">{{ r.created_at|uk('%d %b %H:%M') }}</td>
-          <td>{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
+          <td class="mono" data-key="date" data-v="{{ r.created_at.strftime('%Y%m%d%H%M%S') }}">{{ r.created_at|uk('%d %b %H:%M') }}</td>
+          <td data-key="machine" data-v="{{ r.machine.name|lower }}">{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
             {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
-          <td>{{ r.machine.location }}</td>
-          <td>{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
-          <td>
+          <td data-key="location" data-v="{{ r.machine.location|lower }}">{{ r.machine.location }}</td>
+          <td data-key="fault" data-v="{{ r.fault_type|lower }}">{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
+          <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else 0) }}">
             {% if r.safe_to_use in ('No', 'Not sure') %}<span style="color:var(--red);font-weight:700;">{{ r.safe_to_use }}</span>
             {% else %}{{ r.safe_to_use or '&ndash;'|safe }}{% endif %}
           </td>
-          <td>
+          <td data-key="severity" data-v="{{ {'High': 3, 'Medium': 2, 'Low': 1}.get(r.severity, 0) }}">
             <form method="post" action="{{ url_for('set_report_severity', report_id=r.id, status=status_filter) }}">
               <select name="severity" class="sev-select{{ ' unset' if r.severity not in severities }}" onchange="this.form.submit()" aria-label="Severity">
                 <option value="{{ unassessed }}" {{ 'selected' if r.severity not in severities }}>Not set</option>
@@ -59,7 +69,7 @@
               </select>
             </form>
           </td>
-          <td>
+          <td data-key="inuse" data-v="{{ 1 if r.machine.out_of_service else 0 }}">
             {% if r.machine.out_of_service %}
             <span class="badge open"><span class="dot"></span>Out of service</span>
             <a href="{{ url_for('set_back_in_service', machine_id=r.machine.id, next=request.full_path) }}" class="row-btn" style="margin-top:6px;">Put back in service</a>
@@ -71,7 +81,7 @@
             </form>
             {% endif %}
           </td>
-          <td>
+          <td data-key="status" data-v="{{ 1 if r.status == 'open' else 0 }}">
             {% if r.status == 'open' %}
               <span class="badge open"><span class="dot"></span>Open</span>
             {% else %}
@@ -97,5 +107,46 @@
       </tbody>
     </table>
   </div>
+  <p style="color:var(--text-muted);font-size:12px;margin:8px 0 0;">Tip: click a column heading to sort by it, and click again to reverse. Your choice is remembered on this device.</p>
 </div>
+<script>
+(function () {
+  var table = document.querySelector('table'), body = table.tBodies[0];
+  var heads = Array.prototype.slice.call(table.querySelectorAll('th.sortable'));
+  var KEY = 'faultlog-sort';
+  function rows() { return Array.prototype.slice.call(body.querySelectorAll('tr')).filter(function (r) { return r.querySelector('td[data-key]'); }); }
+  function val(r, k, num) {
+    var c = r.querySelector('td[data-key="' + k + '"]'), v = c ? c.dataset.v : '';
+    return num ? parseFloat(v) : v;
+  }
+  function sortBy(k, dir) {
+    var th = heads.filter(function (h) { return h.dataset.key === k; })[0];
+    if (!th) return;
+    var num = th.dataset.type === 'num', rs = rows();
+    rs.forEach(function (r, i) { r._i = i; });
+    rs.sort(function (a, b) {
+      var x = val(a, k, num), y = val(b, k, num);
+      var c = x < y ? -1 : (x > y ? 1 : 0);
+      return (dir === 'asc' ? c : -c) || (a._i - b._i);
+    });
+    rs.forEach(function (r) { body.appendChild(r); });
+    heads.forEach(function (h) { h.removeAttribute('aria-sort'); h.classList.remove('asc', 'desc'); });
+    th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+    th.classList.add(dir);
+  }
+  heads.forEach(function (h) {
+    h.tabIndex = 0;
+    function go() {
+      var k = h.dataset.key, cur = h.classList.contains('desc') ? 'desc' : (h.classList.contains('asc') ? 'asc' : '');
+      var dir = cur === 'desc' ? 'asc' : 'desc';
+      if (!cur && (k === 'machine' || k === 'location' || k === 'fault')) dir = 'asc';
+      sortBy(k, dir);
+      try { localStorage.setItem(KEY, k + ':' + dir); } catch (e) {}
+    }
+    h.addEventListener('click', go);
+    h.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  });
+  try { var s = (localStorage.getItem(KEY) || '').split(':'); if (s[0] && s[1]) sortBy(s[0], s[1]); } catch (e) {}
+})();
+</script>
 {% endblock %}

@@ -134,10 +134,16 @@ label.field select:focus, label.field textarea:focus, label.field input:focus{
 .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow);}
 table{width:100%;border-collapse:collapse;min-width:680px;}
 th{
-  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
-  padding:11px 14px;border-bottom:1px solid var(--border);font-weight:600;background:var(--lightblue);
+  text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--navy);
+  padding:17px 12px;border-bottom:1px solid var(--border);font-weight:700;background:var(--lightblue);
+  white-space:nowrap;
 }
-td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle;}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{background:#d6ddfb;}
+th.sortable::after{content:" \2195";color:var(--text-muted);font-weight:400;}
+th.sortable.asc::after{content:" \25B2";color:var(--red);font-size:10px;}
+th.sortable.desc::after{content:" \25BC";color:var(--red);font-size:10px;}
+td{padding:11px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle;}
 tr:last-child td{border-bottom:none;}
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 9px;border-radius:99px;}
 .badge.open{background:var(--warn-bg);color:var(--red);}
