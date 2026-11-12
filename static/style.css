@@ -213,3 +213,11 @@ a.row-btn{display:inline-block;text-decoration:none;}
 .section-title{font-size:15px;color:var(--navy);margin:0 0 10px;}
 input[type=search]{font:inherit;}
 .app-nav a .nav-count{margin-left:6px;}
+
+/* ---- fault log: keep long details readable ---- */
+td.fault-cell{min-width:210px;max-width:290px;}
+.fault-details{color:var(--text-muted);font-size:12px;line-height:1.45;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.fault-details.open{display:block;-webkit-line-clamp:unset;overflow:visible;}
+.more-btn{appearance:none;border:0;background:none;padding:2px 0 0;color:var(--navy);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;text-decoration:underline;}
+.more-btn[hidden]{display:none;}

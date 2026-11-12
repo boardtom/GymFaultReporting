@@ -56,10 +56,10 @@
           <td data-key="machine" data-v="{{ r.machine.name|lower }}">{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
             {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
           <td data-key="location" data-v="{{ r.machine.location|lower }}">{{ r.machine.location }}</td>
-          <td data-key="fault" data-v="{{ r.fault_type|lower }}">{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
+          <td class="fault-cell" data-key="fault" data-v="{{ r.fault_type|lower }}"><strong>{{ r.fault_type }}</strong>{% if r.details %}<div class="fault-details">{{ r.details }}</div><button type="button" class="more-btn" hidden>Show more</button>{% endif %}</td>
           <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else 0) }}">
             <form method="post" action="{{ url_for('set_report_safe', report_id=r.id, status=status_filter) }}">
-              <select name="safe_to_use" class="sev-select{{ ' unset' if not r.safe_to_use }}" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
+              <select name="safe_to_use" class="sev-select" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
                 <option value="" {{ 'selected' if not r.safe_to_use }}>Not recorded</option>
                 {% for a in safe_answers %}<option value="{{ a }}" {{ 'selected' if r.safe_to_use == a }}>{{ a }}</option>{% endfor %}
               </select>
@@ -149,6 +149,14 @@
     }
     h.addEventListener('click', go);
     h.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.fault-cell'), function (c) {
+    var d = c.querySelector('.fault-details'), b = c.querySelector('.more-btn');
+    if (!d || !b) return;
+    if (d.scrollHeight > d.clientHeight + 1) b.hidden = false;
+    b.addEventListener('click', function () {
+      var open = d.classList.toggle('open'); b.textContent = open ? 'Show less' : 'Show more';
+    });
   });
   try { var s = (localStorage.getItem(KEY) || '').split(':'); if (s[0] && s[1]) sortBy(s[0], s[1]); } catch (e) {}
 })();
