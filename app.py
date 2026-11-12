@@ -343,8 +343,8 @@ def build_fault_email(report):
         f"Red out of order hang tag placed by member: {report.hang_tag or 'Not asked'}\n"
         f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
-        + "\nSeverity has not been set. Please review, set the severity in the fault log\n"
-          "and mark the machine out of service if required.\n"
+        + "\nPlease review this report in the fault log and mark the machine out of\n"
+          "service if required.\n"
         + f"\nView in the fault log: {APP_BASE_URL}{url_for('log_view')}\n"
     )
     return subject, body
