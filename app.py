@@ -20,7 +20,7 @@ import functools
 import smtplib
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 from email.message import EmailMessage
 
 import click
@@ -30,6 +30,8 @@ from flask import (
     flash, abort, jsonify, send_file
 )
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 try:
     from zoneinfo import ZoneInfo
@@ -98,6 +100,11 @@ class Machine(db.Model):
     name = db.Column(db.String(120), nullable=False)
     location = db.Column(db.String(120), nullable=False)
     active = db.Column(db.Boolean, default=True)
+    # Service provider's asset number for the machine (e.g. Gym Gear "23521").
+    asset_no = db.Column(db.String(40), nullable=True)
+    # Out of service: members see a "do not use" warning when they scan the code.
+    out_of_service = db.Column(db.Boolean, nullable=False, default=False)
+    out_of_service_note = db.Column(db.String(200), nullable=True)
 
 
 class Report(db.Model):
@@ -111,6 +118,35 @@ class Report(db.Model):
     resolved_at = db.Column(db.DateTime, nullable=True)
 
     machine = db.relationship("Machine")
+
+
+class ServiceRecord(db.Model):
+    """One line of a service provider's report for one machine."""
+    id = db.Column(db.Integer, primary_key=True)
+    machine_id = db.Column(db.String(20), db.ForeignKey("machine.id"), nullable=False)
+    service_date = db.Column(db.Date, nullable=False)
+    provider = db.Column(db.String(80), nullable=True)
+    job_ref = db.Column(db.String(40), nullable=True)
+    engineer = db.Column(db.String(80), nullable=True)
+    result = db.Column(db.String(10), nullable=False)       # Pass | Fail
+    severity = db.Column(db.String(20), nullable=True)      # Urgent | Recommended
+    notes = db.Column(db.Text, nullable=True)
+
+    machine = db.relationship("Machine")
+
+
+class AppliedUpdate(db.Model):
+    """Marks a one-off data update as done, so it is never applied twice."""
+    key = db.Column(db.String(80), primary_key=True)
+    applied_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+def latest_service_by_machine():
+    """Return {machine_id: most recent ServiceRecord}."""
+    latest = {}
+    for rec in ServiceRecord.query.order_by(ServiceRecord.service_date, ServiceRecord.id).all():
+        latest[rec.machine_id] = rec
+    return latest
 
 
 # --- Auth (single shared admin password, no user accounts) ---------------
@@ -356,7 +392,8 @@ def machines_admin():
         db.session.query(Report.machine_id, db.func.count(Report.id))
         .group_by(Report.machine_id).all()
     )
-    return render_template("machines.html", machines=machines, report_counts=report_counts)
+    return render_template("machines.html", machines=machines, report_counts=report_counts,
+                           service=latest_service_by_machine())
 
 
 def import_machine_rows(rows):
@@ -436,6 +473,7 @@ def delete_machine(machine_id):
     against it. Use Deactivate instead to keep the history."""
     machine = db.get_or_404(Machine, machine_id)
     removed = Report.query.filter_by(machine_id=machine.id).delete()
+    ServiceRecord.query.filter_by(machine_id=machine.id).delete()
     db.session.delete(machine)
     db.session.commit()
     msg = f"Deleted {machine.name}"
@@ -443,6 +481,132 @@ def delete_machine(machine_id):
         msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
     flash(msg + ".")
     return redirect(url_for("machines_admin"))
+
+
+@app.route("/machines/<machine_id>/out-of-service", methods=["POST"])
+@login_required
+def set_out_of_service(machine_id):
+    """Show members a 'do not use' warning on this machine's report page."""
+    machine = db.get_or_404(Machine, machine_id)
+    machine.out_of_service = True
+    machine.out_of_service_note = (request.form.get("note") or "").strip()[:200] or None
+    db.session.commit()
+    flash(f"{machine.name} is now marked out of service.")
+    return redirect(url_for("machines_admin"))
+
+
+@app.route("/machines/<machine_id>/back-in-service", methods=["POST"])
+@login_required
+def set_back_in_service(machine_id):
+    machine = db.get_or_404(Machine, machine_id)
+    machine.out_of_service = False
+    machine.out_of_service_note = None
+    db.session.commit()
+    flash(f"{machine.name} is back in service.")
+    return redirect(url_for("machines_admin"))
+
+
+# --- Admin: service records ---------------------------------------------------
+@app.route("/service")
+@login_required
+def service_view():
+    result_filter = request.args.get("result", "all")
+    latest = latest_service_by_machine()
+    machines = Machine.query.filter_by(active=True).order_by(Machine.location, Machine.name).all()
+    rows = [(m, latest.get(m.id)) for m in machines]
+    counts = {
+        "pass": sum(1 for _, r in rows if r and r.result == "Pass"),
+        "fail": sum(1 for _, r in rows if r and r.result == "Fail"),
+        "none": sum(1 for _, r in rows if r is None),
+    }
+    if result_filter == "fail":
+        rows = [x for x in rows if x[1] and x[1].result == "Fail"]
+    elif result_filter == "pass":
+        rows = [x for x in rows if x[1] and x[1].result == "Pass"]
+    elif result_filter == "none":
+        rows = [x for x in rows if x[1] is None]
+    return render_template("service.html", rows=rows, counts=counts, result_filter=result_filter)
+
+
+# --- One-off data updates -------------------------------------------------------
+def apply_service_report(path):
+    """Load a service provider's report (JSON in scripts/) once.
+
+    For each machine listed it can update the name and asset number, add a
+    service record, log a failed item as an open fault and mark a machine out
+    of service. Nothing is emailed. A marker row stops it running twice, so
+    later edits made in the admin pages are never overwritten.
+    """
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    key = data["key"]
+    if db.session.get(AppliedUpdate, key):
+        return False
+    if Machine.query.count() == 0:      # empty database: nothing to update yet
+        return False
+
+    svc_date = date.fromisoformat(data["service_date"])
+    found_at = datetime(svc_date.year, svc_date.month, svc_date.day, 12, 0)
+    label = f"{data['provider']} {data['job_type'].lower()} {svc_date.strftime('%d/%m/%Y')} (job {data['job_ref']})"
+
+    db.session.add(AppliedUpdate(key=key))
+    for row in data["machines"]:
+        machine = db.session.get(Machine, row["id"])
+        if not machine:
+            continue
+        if row.get("name"):
+            machine.name = row["name"]
+        if row.get("asset_no"):
+            machine.asset_no = row["asset_no"]
+        db.session.add(ServiceRecord(
+            machine_id=machine.id, service_date=svc_date, provider=data["provider"],
+            job_ref=data["job_ref"], engineer=data.get("engineer"),
+            result=row["result"], severity=row.get("severity"), notes=row.get("notes"),
+        ))
+        if row["result"] == "Fail":
+            db.session.add(Report(
+                machine_id=machine.id, fault_type="Service finding",
+                severity="High" if row.get("severity") == "Urgent" else "Medium",
+                details=f"{label}: {row.get('notes') or 'Failed'}",
+                created_at=found_at,
+            ))
+        if row.get("out_of_service"):
+            machine.out_of_service = True
+            machine.out_of_service_note = row.get("out_of_service_note")
+    try:
+        db.session.commit()
+    except IntegrityError:      # another worker applied it at the same moment
+        db.session.rollback()
+        return False
+    return True
+
+
+def upgrade_database():
+    """Create new tables and add columns introduced since the first release."""
+    db.create_all()
+    existing = {c["name"] for c in inspect(db.engine).get_columns("machine")}
+    additions = {
+        "asset_no": "VARCHAR(40)",
+        "out_of_service": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "out_of_service_note": "VARCHAR(200)",
+    }
+    for column, ddl in additions.items():
+        if column not in existing:
+            try:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE machine ADD COLUMN {column} {ddl}"))
+            except Exception as exc:  # noqa: BLE001  (e.g. another worker added it first)
+                app.logger.warning("Could not add machine.%s: %s", column, exc)
+
+    updates_dir = os.path.join(BASE_DIR, "scripts")
+    for filename in sorted(os.listdir(updates_dir)):
+        if filename.startswith("service_") and filename.endswith(".json"):
+            try:
+                if apply_service_report(os.path.join(updates_dir, filename)):
+                    app.logger.warning("Applied service report %s", filename)
+            except Exception as exc:  # noqa: BLE001
+                db.session.rollback()
+                app.logger.error("Could not apply %s: %s", filename, exc)
 
 
 # --- CLI ------------------------------------------------------------------
@@ -470,7 +634,7 @@ def import_csv(csv_path):
 
 
 with app.app_context():
-    db.create_all()
+    upgrade_database()
 
 if __name__ == "__main__":
     app.run(debug=True)

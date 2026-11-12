@@ -25,9 +25,16 @@
         </div>
       </div>
 
+      {% if machine.out_of_service %}
+      <div class="oos-banner" role="alert">
+        <strong>Out of service. Please do not use this machine.</strong>
+        <span>{{ machine.out_of_service_note or "It is waiting for a repair. We are sorry for the inconvenience." }}</span>
+      </div>
+      {% endif %}
+
       <form method="post">
         <label class="field">
-          What's wrong?
+          {{ "Something else to report?" if machine.out_of_service else "What's wrong?" }}
           <select name="fault_type" required>
             {% for ft in fault_types %}<option value="{{ ft }}">{{ ft }}</option>{% endfor %}
           </select>

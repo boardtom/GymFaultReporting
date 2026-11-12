@@ -17,6 +17,7 @@
     <a href="{{ url_for('report', machine_id=m.id) }}" class="qr-card" style="text-decoration:none;color:inherit;">
       <div class="machine-icon" style="width:44px;height:44px;font-size:15px;">{{ m.name[:2]|upper }}</div>
       <div class="m-name">{{ m.name }}</div>
+      {% if m.out_of_service %}<span class="badge open"><span class="dot"></span>Out of service</span>{% endif %}
       <div class="m-loc">{{ m.location }} &middot; <span class="mono">{{ m.id }}</span></div>
     </a>
     {% else %}

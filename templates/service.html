@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Service records{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Service records</h1>
+    <nav class="app-nav">
+      <a href="{{ url_for('log_view') }}">Log</a>
+      <a href="{{ url_for('qr_index') }}">QR codes</a>
+      <a href="{{ url_for('machines_admin') }}">Machines</a>
+      <a href="{{ url_for('service_view') }}" class="active">Service</a>
+      <a href="{{ url_for('logout') }}">Sign out</a>
+    </nav>
+  </div>
+  <p style="color:var(--text-muted);font-size:13.5px;max-width:70ch;margin-top:-8px;">
+    The most recent result for each active machine, taken from the service provider's report.
+    Failed items are also in the fault log, where they are tracked until resolved.
+  </p>
+
+  <div class="stat-row">
+    <div class="stat"><div class="n">{{ counts.pass }}</div><div class="l">Passed</div></div>
+    <div class="stat"><div class="n">{{ counts.fail }}</div><div class="l">Failed</div></div>
+    <div class="stat"><div class="n">{{ counts.none }}</div><div class="l">No record</div></div>
+  </div>
+
+  <div class="filter-group">
+    <a href="{{ url_for('service_view', result='all') }}" class="{{ 'active' if result_filter == 'all' }}">All</a>
+    <a href="{{ url_for('service_view', result='fail') }}" class="{{ 'active' if result_filter == 'fail' }}">Failed</a>
+    <a href="{{ url_for('service_view', result='pass') }}" class="{{ 'active' if result_filter == 'pass' }}">Passed</a>
+    <a href="{{ url_for('service_view', result='none') }}" class="{{ 'active' if result_filter == 'none' }}">No record</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Machine</th><th>Location</th><th>Serviced</th><th>Result</th><th>Engineer's notes</th></tr>
+      </thead>
+      <tbody>
+        {% for m, r in rows %}
+        <tr>
+          <td>{{ m.name }}
+            <div class="mono" style="color:var(--text-muted);font-size:11px;">{{ m.id }}{% if m.asset_no %} &middot; asset {{ m.asset_no }}{% endif %}</div>
+          </td>
+          <td>{{ m.location }}</td>
+          {% if r %}
+          <td class="mono">{{ r.service_date.strftime('%d %b %Y') }}
+            <div style="color:var(--text-muted);font-size:11px;">{{ r.provider }}{% if r.job_ref %} &middot; job {{ r.job_ref }}{% endif %}</div>
+          </td>
+          <td>
+            <span class="badge {{ 'resolved' if r.result == 'Pass' else 'open' }}"><span class="dot"></span>{{ r.result }}</span>
+            {% if r.severity %}<div style="font-size:11.5px;margin-top:4px;{% if r.severity == 'Urgent' %}color:var(--red);font-weight:700;{% else %}color:var(--text-muted);{% endif %}">{{ r.severity }}</div>{% endif %}
+            {% if m.out_of_service %}<div style="font-size:11.5px;color:var(--red);font-weight:700;">Out of service</div>{% endif %}
+          </td>
+          <td style="max-width:44ch;">{{ r.notes or "" }}</td>
+          {% else %}
+          <td colspan="3" style="color:var(--text-muted);">Not on the last service report</td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty-row">Nothing in this view.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

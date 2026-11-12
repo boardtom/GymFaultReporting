@@ -8,6 +8,7 @@
       <a href="{{ url_for('log_view') }}">Log</a>
       <a href="{{ url_for('qr_index') }}">QR codes</a>
       <a href="{{ url_for('machines_admin') }}" class="active">Machines</a>
+      <a href="{{ url_for('service_view') }}">Service</a>
       <a href="{{ url_for('logout') }}">Sign out</a>
     </nav>
   </div>
@@ -43,21 +44,43 @@
     <button type="submit" class="btn btn-primary">Add machine</button>
   </form>
 
+  <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px;">
+    <strong>Out of service</strong> keeps the machine and its QR code, and shows members a "do not use" warning when they scan it.
+    <strong>Deactivate</strong> hides a machine that has left the site.
+  </p>
+
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for m in machines %}
         <tr>
-          <td class="mono">{{ m.id }}</td>
-          <td>{{ m.name }}</td>
+          <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
+          <td>{{ m.name }}{% if m.asset_no %}<div class="mono" style="color:var(--text-muted);font-size:11px;">Asset {{ m.asset_no }}</div>{% endif %}</td>
           <td>{{ m.location }}</td>
           <td>
-            {% if m.active %}<span class="badge resolved"><span class="dot"></span>Active</span>
-            {% else %}<span class="badge open"><span class="dot"></span>Inactive</span>{% endif %}
+            {% set sv = service.get(m.id) %}
+            {% if sv %}
+              <span class="mono" style="font-size:12px;">{{ sv.service_date.strftime('%d %b %Y') }}</span>
+              <span class="badge {{ 'resolved' if sv.result == 'Pass' else 'open' }}"><span class="dot"></span>{{ sv.result }}</span>
+            {% else %}<span style="color:var(--text-muted);font-size:12px;">No record</span>{% endif %}
           </td>
           <td>
-            <div style="display:flex;gap:6px;">
+            {% if not m.active %}<span class="badge open"><span class="dot"></span>Inactive</span>
+            {% elif m.out_of_service %}<span class="badge open"><span class="dot"></span>Out of service</span>
+            {% else %}<span class="badge resolved"><span class="dot"></span>Active</span>{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              {% if m.out_of_service %}
+              <form method="post" action="{{ url_for('set_back_in_service', machine_id=m.id) }}">
+                <button type="submit" class="row-btn">Back in service</button>
+              </form>
+              {% elif m.active %}
+              <form method="post" action="{{ url_for('set_out_of_service', machine_id=m.id) }}">
+                <button type="submit" class="row-btn">Out of service</button>
+              </form>
+              {% endif %}
               {% if m.active %}
               <form method="post" action="{{ url_for('deactivate_machine', machine_id=m.id) }}">
                 <button type="submit" class="row-btn">Deactivate</button>
@@ -77,7 +100,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="empty-row">No machines yet.</td></tr>
+        <tr><td colspan="6" class="empty-row">No machines yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

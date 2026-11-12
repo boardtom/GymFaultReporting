@@ -172,3 +172,12 @@ tr:last-child td{border-bottom:none;}
 @media (max-width:600px){
   .app-header{align-items:flex-start;}
 }
+
+/* Out of service warning shown to members on the report page */
+.oos-banner{
+  display:flex;flex-direction:column;gap:4px;
+  background:var(--warn-bg);color:var(--red);
+  border:1px solid var(--red);border-left-width:5px;border-radius:10px;
+  padding:12px 14px;margin:0 0 16px;font-size:14px;line-height:1.4;
+}
+.oos-banner span{color:var(--text);font-size:13px;}
