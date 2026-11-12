@@ -5,13 +5,23 @@
   <div class="app-header">
     <h1>Fault log</h1>
     <nav class="app-nav">
-      <a href="{{ url_for('log_view') }}" class="active">Log</a>
+      <a href="{{ url_for('log_view') }}" class="active">Log{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
       <a href="{{ url_for('qr_index') }}">QR codes</a>
       <a href="{{ url_for('machines_admin') }}">Machines</a>
       <a href="{{ url_for('service_view') }}">Service</a>
       <a href="{{ url_for('logout') }}">Sign out</a>
     </nav>
   </div>
+
+  {% if new_report_count %}
+  <div class="new-prompt" role="status">
+    <div>
+      <strong>{{ new_report_count }} new report{{ 's' if new_report_count != 1 }} to review.</strong>
+      <span>Check each one, set its severity, and mark the machine out of service if required.</span>
+    </div>
+    {% if status_filter != 'new' %}<a href="{{ url_for('log_view', status='new') }}" class="btn btn-primary">Review now</a>{% endif %}
+  </div>
+  {% endif %}
 
   <div class="stat-row">
     <div class="stat"><div class="n">{{ total }}</div><div class="l">Total</div></div>
@@ -20,6 +30,7 @@
   </div>
 
   <div class="filter-group">
+    <a href="{{ url_for('log_view', status='new') }}" class="{{ 'active' if status_filter == 'new' }}">New{% if new_report_count %} ({{ new_report_count }}){% endif %}</a>
     <a href="{{ url_for('log_view', status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All</a>
     <a href="{{ url_for('log_view', status='open') }}" class="{{ 'active' if status_filter == 'open' }}">Open</a>
     <a href="{{ url_for('log_view', status='resolved') }}" class="{{ 'active' if status_filter == 'resolved' }}">Resolved</a>
@@ -82,7 +93,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="empty-row">No reports in this view.</td></tr>
+        <tr><td colspan="8" class="empty-row">{{ 'Nothing new to review.' if status_filter == 'new' else 'No reports in this view.' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

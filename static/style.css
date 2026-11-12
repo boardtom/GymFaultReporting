@@ -187,3 +187,11 @@ tr:last-child td{border-bottom:none;}
 .sev-select.unset{border-color:var(--red);color:var(--red);font-weight:600;}
 div.field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:14px;}
 .row-btn{white-space:nowrap;}
+
+/* New reports waiting for WI to review */
+.nav-count{display:inline-block;min-width:18px;margin-left:6px;padding:1px 6px;border-radius:99px;background:var(--red);color:#fff;font-size:11px;font-weight:700;text-align:center;}
+.new-prompt{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  background:var(--warn-bg);border:1px solid var(--red);border-left-width:5px;border-radius:10px;padding:14px 16px;margin-bottom:18px;}
+.new-prompt strong{display:block;color:var(--red);font-size:15px;}
+.new-prompt span{font-size:13px;color:var(--text);}
+.new-prompt .btn{width:auto;text-decoration:none;}

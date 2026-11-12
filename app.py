@@ -166,11 +166,27 @@ def login_required(view):
     return wrapped
 
 
+def new_reports_query():
+    """Reports nobody at WI has reviewed yet: still open, severity not set."""
+    return Report.query.filter(Report.status == "open", Report.severity.notin_(SEVERITIES))
+
+
+@app.context_processor
+def inject_new_report_count():
+    if session.get("is_admin"):
+        return {"new_report_count": new_reports_query().count()}
+    return {"new_report_count": 0}
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         if request.form.get("password") == ADMIN_PASSWORD:
             session["is_admin"] = True
+            # Take WI straight to anything that still needs reviewing.
+            if new_reports_query().count():
+                session["new_prompt"] = True
+                return redirect(url_for("log_view", status="new"))
             return redirect(request.args.get("next") or url_for("log_view"))
         flash("Incorrect password.")
     return render_template("login.html")
@@ -312,7 +328,11 @@ def log_view():
     query = Report.query
     if status_filter in ("open", "resolved"):
         query = query.filter_by(status=status_filter)
+    elif status_filter == "new":
+        query = new_reports_query()
     reports = query.order_by(Report.created_at.desc()).all()
+    if status_filter == "new":      # possible safety concerns first
+        reports.sort(key=lambda r: r.safe_to_use not in ("No", "Not sure"))
 
     total = Report.query.count()
     open_count = Report.query.filter_by(status="open").count()
@@ -326,6 +346,7 @@ def log_view():
         resolved_count=total - open_count,
         severities=SEVERITIES,
         unassessed=UNASSESSED,
+        show_new_prompt=session.pop("new_prompt", False),
     )
 
 
