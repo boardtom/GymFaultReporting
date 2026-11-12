@@ -333,6 +333,19 @@ def toggle_report(report_id):
     return redirect(url_for("log_view", status=request.args.get("status", "all")))
 
 
+@app.route("/log/<int:report_id>/delete", methods=["POST"])
+@login_required
+def delete_report(report_id):
+    """Remove one fault report for good (for test entries and mistakes).
+    Real faults should be marked resolved instead, so the history is kept."""
+    rpt = db.get_or_404(Report, report_id)
+    name = rpt.machine.name
+    db.session.delete(rpt)
+    db.session.commit()
+    flash(f"Deleted the fault report for {name}.")
+    return redirect(url_for("log_view", status=request.args.get("status", "all")))
+
+
 # --- Routes: QR codes ----------------------------------------------------
 def _machine_report_url(machine_id):
     return f"{APP_BASE_URL}{url_for('report', machine_id=machine_id)}"

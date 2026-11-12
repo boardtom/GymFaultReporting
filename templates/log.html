@@ -46,9 +46,16 @@
             {% endif %}
           </td>
           <td>
-            <form method="post" action="{{ url_for('toggle_report', report_id=r.id, status=status_filter) }}">
-              <button type="submit" class="row-btn">{{ 'Mark resolved' if r.status == 'open' else 'Reopen' }}</button>
-            </form>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <form method="post" action="{{ url_for('toggle_report', report_id=r.id, status=status_filter) }}">
+                <button type="submit" class="row-btn">{{ 'Mark resolved' if r.status == 'open' else 'Reopen' }}</button>
+              </form>
+              <form method="post" action="{{ url_for('delete_report', report_id=r.id, status=status_filter) }}"
+                    data-msg="Delete this fault report for {{ r.machine.name }} permanently? This cannot be undone."
+                    onsubmit="return confirm(this.dataset.msg);">
+                <button type="submit" class="row-btn" style="color:var(--red);">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% else %}
