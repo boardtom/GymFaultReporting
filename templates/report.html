@@ -40,17 +40,17 @@
           </select>
         </label>
 
-        <label class="field">
-          Urgency
+        <div class="field">
+          Is the equipment safe to use?
           <div class="severity-row">
-            {% for sev in severities %}
+            {% for ans in safe_answers %}
             <label>
-              <input type="radio" name="severity" value="{{ sev }}" {% if sev == "Medium" %}checked{% endif %}>
-              <span class="opt">{{ sev }}</span>
+              <input type="radio" name="safe_to_use" value="{{ ans }}" required>
+              <span class="opt">{{ ans }}</span>
             </label>
             {% endfor %}
           </div>
-        </label>
+        </div>
 
         <label class="field">
           Details (optional)

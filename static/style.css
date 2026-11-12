@@ -181,3 +181,9 @@ tr:last-child td{border-bottom:none;}
   padding:12px 14px;margin:0 0 16px;font-size:14px;line-height:1.4;
 }
 .oos-banner span{color:var(--text);font-size:13px;}
+
+/* Severity picker in the fault log (set by WI at triage) */
+.sev-select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);}
+.sev-select.unset{border-color:var(--red);color:var(--red);font-weight:600;}
+div.field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:14px;}
+.row-btn{white-space:nowrap;}

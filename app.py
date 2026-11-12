@@ -91,7 +91,11 @@ FAULT_TYPES = [
     "Missing part",
     "Other",
 ]
+# Severity is set by Wellness International at triage, not by the member.
 SEVERITIES = ["Low", "Medium", "High"]
+UNASSESSED = "Unassessed"
+# What the member is asked instead: an observation, not a rating.
+SAFE_ANSWERS = ["Yes", "No", "Not sure"]
 
 
 # --- Models ---------------------------------------------------------------
@@ -111,7 +115,10 @@ class Report(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     machine_id = db.Column(db.String(20), db.ForeignKey("machine.id"), nullable=False)
     fault_type = db.Column(db.String(80), nullable=False)
-    severity = db.Column(db.String(10), nullable=False, default="Medium")
+    # Set by WI in the fault log. "Unassessed" until someone has triaged it.
+    severity = db.Column(db.String(10), nullable=False, default=UNASSESSED)
+    # The member's answer to "Is the equipment safe to use?" (Yes | No | Not sure).
+    safe_to_use = db.Column(db.String(10), nullable=True)
     details = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(10), nullable=False, default="open")  # open | resolved
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -185,15 +192,17 @@ def _local_time(dt):
 
 def build_fault_email(report):
     """Return (subject, plain-text body) for a fault alert."""
-    prefix = "[URGENT] " if report.severity == "High" else ""
+    prefix = "[PRIORITY] " if report.safe_to_use in ("No", "Not sure") else ""
     subject = f"{prefix}Equipment fault: {report.machine.name} ({report.machine.id})"
     body = (
         f"Machine: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
         f"Fault: {report.fault_type}\n"
-        f"Urgency: {report.severity}\n"
+        f"Safe to use (member's view): {report.safe_to_use or 'Not asked'}\n"
         f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
+        + "\nSeverity has not been set. Please review, set the severity in the fault log\n"
+          "and mark the machine out of service if required.\n"
         + f"\nView in the fault log: {APP_BASE_URL}{url_for('log_view')}\n"
     )
     return subject, body
@@ -271,16 +280,17 @@ def report(machine_id):
 
     if request.method == "POST":
         fault_type = request.form.get("fault_type", "Other")
-        severity = request.form.get("severity", "Medium")
+        safe_to_use = request.form.get("safe_to_use", "Not sure")
         details = request.form.get("details", "").strip()
 
-        if fault_type not in FAULT_TYPES or severity not in SEVERITIES:
+        if fault_type not in FAULT_TYPES or safe_to_use not in SAFE_ANSWERS:
             abort(400)
 
         rpt = Report(
             machine_id=machine.id,
             fault_type=fault_type,
-            severity=severity,
+            severity=UNASSESSED,
+            safe_to_use=safe_to_use,
             details=details or None,
         )
         db.session.add(rpt)
@@ -290,7 +300,7 @@ def report(machine_id):
         return render_template("confirm.html", machine=machine, email_sent=email_sent)
 
     return render_template(
-        "report.html", machine=machine, fault_types=FAULT_TYPES, severities=SEVERITIES
+        "report.html", machine=machine, fault_types=FAULT_TYPES, safe_answers=SAFE_ANSWERS
     )
 
 
@@ -314,6 +324,8 @@ def log_view():
         total=total,
         open_count=open_count,
         resolved_count=total - open_count,
+        severities=SEVERITIES,
+        unassessed=UNASSESSED,
     )
 
 
@@ -330,6 +342,19 @@ def toggle_report(report_id):
     db.session.commit()
     if request.headers.get("Accept") == "application/json":
         return jsonify({"id": rpt.id, "status": rpt.status})
+    return redirect(url_for("log_view", status=request.args.get("status", "all")))
+
+
+@app.route("/log/<int:report_id>/severity", methods=["POST"])
+@login_required
+def set_report_severity(report_id):
+    """WI sets (or clears) the severity of a report at triage."""
+    rpt = db.get_or_404(Report, report_id)
+    severity = request.form.get("severity", "")
+    if severity not in SEVERITIES + [UNASSESSED]:
+        abort(400)
+    rpt.severity = severity
+    db.session.commit()
     return redirect(url_for("log_view", status=request.args.get("status", "all")))
 
 
@@ -496,6 +521,12 @@ def delete_machine(machine_id):
     return redirect(url_for("machines_admin"))
 
 
+def _back_to_log_or_machines():
+    if request.form.get("from") == "log":
+        return url_for("log_view", status=request.form.get("status", "all"))
+    return url_for("machines_admin")
+
+
 @app.route("/machines/<machine_id>/out-of-service", methods=["POST"])
 @login_required
 def set_out_of_service(machine_id):
@@ -505,7 +536,7 @@ def set_out_of_service(machine_id):
     machine.out_of_service_note = (request.form.get("note") or "").strip()[:200] or None
     db.session.commit()
     flash(f"{machine.name} is now marked out of service.")
-    return redirect(url_for("machines_admin"))
+    return redirect(_back_to_log_or_machines())
 
 
 @app.route("/machines/<machine_id>/back-in-service", methods=["POST"])
@@ -516,7 +547,7 @@ def set_back_in_service(machine_id):
     machine.out_of_service_note = None
     db.session.commit()
     flash(f"{machine.name} is back in service.")
-    return redirect(url_for("machines_admin"))
+    return redirect(_back_to_log_or_machines())
 
 
 # --- Admin: service records ---------------------------------------------------
@@ -610,6 +641,14 @@ def upgrade_database():
                     conn.execute(text(f"ALTER TABLE machine ADD COLUMN {column} {ddl}"))
             except Exception as exc:  # noqa: BLE001  (e.g. another worker added it first)
                 app.logger.warning("Could not add machine.%s: %s", column, exc)
+
+    report_cols = {c["name"] for c in inspect(db.engine).get_columns("report")}
+    if "safe_to_use" not in report_cols:
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE report ADD COLUMN safe_to_use VARCHAR(10)"))
+        except Exception as exc:  # noqa: BLE001
+            app.logger.warning("Could not add report.safe_to_use: %s", exc)
 
     updates_dir = os.path.join(BASE_DIR, "scripts")
     for filename in sorted(os.listdir(updates_dir)):
