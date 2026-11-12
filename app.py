@@ -1032,6 +1032,26 @@ def upgrade_database():
                 db.session.rollback()
                 app.logger.error("Could not apply %s: %s", filename, exc)
 
+    # One-off rename of the "Fitbox" area to "Functional Area" (12 Nov 2026). Machine IDs
+    # (FBX-...) are printed on the QR labels, so they are deliberately left unchanged.
+    rename_key = "rename-fitbox-to-functional-area-2026-11-12"
+    try:
+        if not db.session.get(AppliedUpdate, rename_key) and Machine.query.count() > 0:
+            db.session.add(AppliedUpdate(key=rename_key))
+            for m in Machine.query.filter(Machine.location == "Fitbox"):
+                m.location = "Functional Area"
+            for model, col in ((Report, "details"), (ServiceRecord, "notes"),
+                               (OutOfServiceLog, "reason"), (OutOfServiceLog, "work_done"),
+                               (Machine, "out_of_service_note")):
+                attr = getattr(model, col)
+                for row in model.query.filter(attr.like("%Fitbox%")):
+                    setattr(row, col, getattr(row, col).replace("Fitbox", "Functional Area"))
+            db.session.commit()
+            app.logger.warning("Renamed Fitbox to Functional Area")
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not rename Fitbox: %s", exc)
+
 
 # --- CLI ------------------------------------------------------------------
 @app.cli.command("seed")
