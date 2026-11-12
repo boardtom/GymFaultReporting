@@ -195,3 +195,8 @@ div.field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weigh
 .new-prompt strong{display:block;color:var(--red);font-size:15px;}
 .new-prompt span{font-size:13px;color:var(--text);}
 .new-prompt .btn{width:auto;text-decoration:none;}
+
+/* Whole row highlighted when the machine is out of service */
+tr.row-oos td{background:var(--warn-bg);}
+tr.row-oos td:first-child{box-shadow:inset 5px 0 0 var(--red);}
+tr.row-oos .badge{background:#fff;border:1px solid var(--red);}

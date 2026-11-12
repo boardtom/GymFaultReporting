@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         {% for r in reports %}
-        <tr>
+        <tr{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono">{{ r.created_at.strftime('%d %b %H:%M') }}</td>
           <td>{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div></td>
           <td>{{ r.machine.location }}</td>
