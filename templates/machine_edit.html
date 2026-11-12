@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Edit machine{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Edit machine</h1>
+    {% set nav_active = "equipment" %}{% include "_nav.html" %}
+  </div>
+
+  <div class="card" style="max-width:560px;">
+    <p style="margin:0 0 16px;font-size:13px;color:var(--text-muted);">
+      The ID <span class="mono">{{ machine.id }}</span> can't be changed, because the QR code and its history depend on it.
+    </p>
+    <form method="post">
+      <label class="field">
+        Name
+        <input type="text" name="name" value="{{ request.form.get('name', machine.name) }}" required maxlength="120">
+      </label>
+      <label class="field">
+        Location
+        <input type="text" name="location" list="locations" value="{{ request.form.get('location', machine.location) }}" required maxlength="120">
+        <datalist id="locations">{% for loc in locations %}<option value="{{ loc }}">{% endfor %}</datalist>
+      </label>
+      <label class="field">
+        Service provider's asset number (optional)
+        <input type="text" name="asset_no" value="{{ request.form.get('asset_no', machine.asset_no or '') }}" maxlength="40" placeholder="e.g. 23521">
+      </label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary" style="width:auto;">Save changes</button>
+        <a href="{{ url_for('machines_admin') }}" class="btn btn-ghost" style="width:auto;text-decoration:none;">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

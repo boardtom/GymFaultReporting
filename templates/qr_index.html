@@ -4,14 +4,9 @@
 <div class="app-shell">
   <div class="app-header">
     <h1>QR codes</h1>
-    <nav class="app-nav">
-      <a href="{{ url_for('log_view') }}">Log{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('qr_index') }}" class="active">QR codes</a>
-      <a href="{{ url_for('machines_admin') }}">Machines</a>
-      <a href="{{ url_for('service_view') }}">Service</a>
-      <a href="{{ url_for('logout') }}">Sign out</a>
-    </nav>
+    {% set nav_active = "equipment" %}{% include "_nav.html" %}
   </div>
+  {% set equip_tab = "qr" %}{% include "_equipment_tabs.html" %}
   <p style="color:var(--text-muted);font-size:13.5px;max-width:60ch;margin-top:-8px;">
     Each code links straight to that machine's report form. Right-click &rarr; save, or download the PNG, to print and fix to the equipment.
   </p>

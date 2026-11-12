@@ -14,23 +14,29 @@ Deploy: see README.md for Render setup.
 """
 import os
 import io
+import csv
+import hmac
+import time
 import json
+import hashlib
 import base64
 import functools
 import smtplib
 import urllib.request
 import urllib.error
-from datetime import datetime, date, timezone
+from collections import defaultdict
+from datetime import datetime, date, timedelta, timezone
 from email.message import EmailMessage
 
 import click
 import qrcode
 from flask import (
     Flask, render_template, request, redirect, url_for, session,
-    flash, abort, jsonify, send_file
+    flash, abort, jsonify, send_file, Response
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text
+from werkzeug.middleware.proxy_fix import ProxyFix
+from sqlalchemy import false, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -67,6 +73,38 @@ db = SQLAlchemy(app)
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 ALERT_TO = os.environ.get("ALERT_TO_EMAIL", "facilities@wellnessinternational.co.uk")
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000").rstrip("/")
+IS_PRODUCTION = APP_BASE_URL.startswith("https://")
+
+# --- Security settings ---------------------------------------------------
+# Render sits behind a proxy: trust one hop so the real client address and
+# the https scheme are seen (needed for the sign-in attempt limit).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Without a SECRET_KEY the app would sign sessions with a default that is in the
+# source code. Derive a private one from values that are not public instead.
+if not os.environ.get("SECRET_KEY"):
+    if ADMIN_PASSWORD != "changeme":
+        app.config["SECRET_KEY"] = hashlib.sha256(
+            f"faultflag|{ADMIN_PASSWORD}|{db_url}".encode("utf-8")).hexdigest()
+    if IS_PRODUCTION:
+        app.logger.warning("SECRET_KEY is not set. Set it in the Render environment.")
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",          # also stops cross-site form posts
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    if session.get("is_admin"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 # Email option 1 (recommended on Render's free tier): Resend web API.
 # Free Render services block SMTP ports, but HTTPS calls are fine.
@@ -148,12 +186,70 @@ class AppliedUpdate(db.Model):
     applied_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class OutOfServiceLog(db.Model):
+    """One period when a machine was out of service, and how it ended."""
+    id = db.Column(db.Integer, primary_key=True)
+    machine_id = db.Column(db.String(20), db.ForeignKey("machine.id"), nullable=False)
+    started_at = db.Column(db.DateTime, nullable=False)      # UTC
+    reason = db.Column(db.Text, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)         # UTC; empty while still out
+    work_done = db.Column(db.Text, nullable=True)
+    carried_out_by = db.Column(db.String(80), nullable=True)
+    job_ref = db.Column(db.String(60), nullable=True)
+
+    machine = db.relationship("Machine")
+
+
 def latest_service_by_machine():
     """Return {machine_id: most recent ServiceRecord}."""
     latest = {}
     for rec in ServiceRecord.query.order_by(ServiceRecord.service_date, ServiceRecord.id).all():
         latest[rec.machine_id] = rec
     return latest
+
+
+# --- Time helpers: stored in UTC, shown and entered in UK time ---------------
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def to_uk(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UK_TZ)
+
+
+def parse_uk_local(value):
+    """Turn a datetime-local form value (UK time) into naive UTC, or None."""
+    try:
+        local = datetime.strptime((value or "").strip(), "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return None
+    return local.replace(tzinfo=UK_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+@app.template_filter("uk")
+def uk_filter(dt, fmt="%d %b %Y %H:%M"):
+    local = to_uk(dt)
+    return local.strftime(fmt) if local else ""
+
+
+def duration_text(start, end=None):
+    if not start:
+        return ""
+    secs = max(int(((end or utcnow()) - start).total_seconds()), 0)
+    if secs < 3600:
+        n = max(secs // 60, 1)
+        return f"{n} min{'s' if n != 1 else ''}"
+    if secs < 48 * 3600:
+        n = secs // 3600
+        return f"{n} hr{'s' if n != 1 else ''}"
+    return f"{secs // 86400} days"
+
+
+app.jinja_env.globals["duration_text"] = duration_text
 
 
 # --- Auth (single shared admin password, no user accounts) ---------------
@@ -172,22 +268,50 @@ def new_reports_query():
 
 
 @app.context_processor
-def inject_new_report_count():
+def inject_admin_counts():
     if session.get("is_admin"):
-        return {"new_report_count": new_reports_query().count()}
-    return {"new_report_count": 0}
+        return {
+            "new_report_count": new_reports_query().count(),
+            "oos_count": Machine.query.filter_by(out_of_service=True).count(),
+        }
+    return {"new_report_count": 0, "oos_count": 0}
+
+
+# Limit wrong password guesses: 5 failures from one address locks it for 10 minutes.
+_failed_logins = defaultdict(list)
+LOGIN_MAX_FAILS = 5
+LOGIN_WINDOW_SECONDS = 600
+
+
+def _login_blocked(ip):
+    now = time.time()
+    recent = [t for t in _failed_logins[ip] if now - t < LOGIN_WINDOW_SECONDS]
+    _failed_logins[ip] = recent
+    if len(_failed_logins) > 500:       # forget old addresses
+        for key in [k for k, v in _failed_logins.items() if not v]:
+            del _failed_logins[key]
+    return len(recent) >= LOGIN_MAX_FAILS
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form.get("password") == ADMIN_PASSWORD:
+        ip = request.remote_addr or "unknown"
+        if _login_blocked(ip):
+            flash("Too many incorrect attempts. Please wait 10 minutes and try again.")
+            return render_template("login.html"), 429
+        supplied = (request.form.get("password") or "").encode("utf-8")
+        if hmac.compare_digest(supplied, ADMIN_PASSWORD.encode("utf-8")):
+            _failed_logins.pop(ip, None)
+            session.clear()
             session["is_admin"] = True
+            session.permanent = True
             # Take WI straight to anything that still needs reviewing.
             if new_reports_query().count():
                 session["new_prompt"] = True
                 return redirect(url_for("log_view", status="new"))
             return redirect(request.args.get("next") or url_for("log_view"))
+        _failed_logins[ip].append(time.time())
         flash("Incorrect password.")
     return render_template("login.html")
 
@@ -321,21 +445,45 @@ def report(machine_id):
 
 
 # --- Routes: admin log ---------------------------------------------------
-@app.route("/log")
-@login_required
-def log_view():
-    status_filter = request.args.get("status", "all")
+REPEAT_DAYS = 90
+
+
+def repeat_counts():
+    """Machines with two or more reports in the last 90 days: {machine_id: count}."""
+    cutoff = utcnow() - timedelta(days=REPEAT_DAYS)
+    rows = (db.session.query(Report.machine_id, db.func.count(Report.id))
+            .filter(Report.created_at >= cutoff).group_by(Report.machine_id).all())
+    return {machine_id: n for machine_id, n in rows if n >= 2}
+
+
+def reports_for_filter(status_filter):
     query = Report.query
     if status_filter in ("open", "resolved"):
         query = query.filter_by(status=status_filter)
     elif status_filter == "new":
         query = new_reports_query()
+    elif status_filter == "repeat":
+        ids = list(repeat_counts())
+        cutoff = utcnow() - timedelta(days=REPEAT_DAYS)
+        query = query.filter(Report.machine_id.in_(ids) if ids else false(),
+                             Report.created_at >= cutoff)
     reports = query.order_by(Report.created_at.desc()).all()
     if status_filter == "new":      # possible safety concerns first
         reports.sort(key=lambda r: r.safe_to_use not in ("No", "Not sure"))
+    if status_filter == "repeat":   # group by machine
+        reports.sort(key=lambda r: r.machine_id)
+    return reports
+
+
+@app.route("/log")
+@login_required
+def log_view():
+    status_filter = request.args.get("status", "all")
+    reports = reports_for_filter(status_filter)
 
     total = Report.query.count()
     open_count = Report.query.filter_by(status="open").count()
+    repeats = repeat_counts()
 
     return render_template(
         "log.html",
@@ -346,8 +494,50 @@ def log_view():
         resolved_count=total - open_count,
         severities=SEVERITIES,
         unassessed=UNASSESSED,
+        repeats=repeats,
+        repeat_days=REPEAT_DAYS,
         show_new_prompt=session.pop("new_prompt", False),
     )
+
+
+def csv_safe(value):
+    """Stop spreadsheet programs treating member-typed text as a formula."""
+    if value is None:
+        return ""
+    text_value = str(value)
+    return "'" + text_value if text_value[:1] in ("=", "+", "-", "@", "\t", "\r") else text_value
+
+
+def csv_response(filename, header, rows):
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([csv_safe(v) for v in row])
+    return Response(
+        "\ufeff" + buf.getvalue(),         # BOM so Excel reads accents correctly
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.route("/log/export.csv")
+@login_required
+def export_log():
+    status_filter = request.args.get("status", "all")
+    rows = []
+    for r in reports_for_filter(status_filter):
+        rows.append([
+            to_uk(r.created_at).strftime("%Y-%m-%d %H:%M"), r.machine.id, r.machine.name,
+            r.machine.location, r.fault_type, r.details, r.safe_to_use or "",
+            r.severity, r.status,
+            to_uk(r.resolved_at).strftime("%Y-%m-%d %H:%M") if r.resolved_at else "",
+        ])
+    return csv_response(
+        f"fault-log-{to_uk(utcnow()).strftime('%Y-%m-%d')}.csv",
+        ["Reported (UK time)", "Machine ID", "Machine", "Location", "Fault", "Details",
+         "Safe to use (member's answer)", "Severity", "Status", "Resolved (UK time)"],
+        rows)
 
 
 @app.route("/log/<int:report_id>/toggle", methods=["POST"])
@@ -533,6 +723,7 @@ def delete_machine(machine_id):
     machine = db.get_or_404(Machine, machine_id)
     removed = Report.query.filter_by(machine_id=machine.id).delete()
     ServiceRecord.query.filter_by(machine_id=machine.id).delete()
+    OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
     db.session.delete(machine)
     db.session.commit()
     msg = f"Deleted {machine.name}"
@@ -548,27 +739,157 @@ def _back_to_log_or_machines():
     return url_for("machines_admin")
 
 
+def _safe_next(default):
+    """A redirect target from ?next=, only ever a path on this site."""
+    target = request.values.get("next", "")
+    if target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return default
+
+
+def _open_oos_entry(machine_id):
+    return (OutOfServiceLog.query.filter_by(machine_id=machine_id, ended_at=None)
+            .order_by(OutOfServiceLog.started_at.desc()).first())
+
+
 @app.route("/machines/<machine_id>/out-of-service", methods=["POST"])
 @login_required
 def set_out_of_service(machine_id):
     """Show members a 'do not use' warning on this machine's report page."""
     machine = db.get_or_404(Machine, machine_id)
+    note = (request.form.get("note") or "").strip()[:200] or None
+    reason = note
+    report_id = request.form.get("report_id", type=int)
+    if not reason and report_id:
+        rpt = db.session.get(Report, report_id)
+        if rpt and rpt.machine_id == machine.id:
+            reason = rpt.fault_type + (f": {rpt.details}" if rpt.details else "")
+    if not _open_oos_entry(machine.id):
+        where = "fault log" if request.form.get("from") == "log" else "Machines page"
+        db.session.add(OutOfServiceLog(
+            machine_id=machine.id, started_at=utcnow(),
+            reason=reason or f"Taken out of service from the {where}."))
     machine.out_of_service = True
-    machine.out_of_service_note = (request.form.get("note") or "").strip()[:200] or None
+    machine.out_of_service_note = note
     db.session.commit()
     flash(f"{machine.name} is now marked out of service.")
     return redirect(_back_to_log_or_machines())
 
 
-@app.route("/machines/<machine_id>/back-in-service", methods=["POST"])
+@app.route("/machines/<machine_id>/back-in-service", methods=["GET", "POST"])
 @login_required
 def set_back_in_service(machine_id):
+    """Record what was done, by whom and when, then return the machine to use."""
     machine = db.get_or_404(Machine, machine_id)
-    machine.out_of_service = False
-    machine.out_of_service_note = None
-    db.session.commit()
-    flash(f"{machine.name} is back in service.")
-    return redirect(_back_to_log_or_machines())
+    if not machine.out_of_service:
+        flash(f"{machine.name} is already in service.")
+        return redirect(_safe_next(url_for("out_of_service_view")))
+
+    entry = _open_oos_entry(machine.id)
+    open_faults = Report.query.filter_by(machine_id=machine.id, status="open").count()
+    form = {
+        "ended_at": to_uk(utcnow()).strftime("%Y-%m-%dT%H:%M"),
+        "work_done": "", "carried_out_by": "", "job_ref": "", "resolve_faults": "1",
+    }
+    error = None
+
+    if request.method == "POST":
+        for key in ("ended_at", "work_done", "carried_out_by", "job_ref"):
+            form[key] = (request.form.get(key) or "").strip()
+        form["resolve_faults"] = "1" if request.form.get("resolve_faults") else ""
+        ended = parse_uk_local(form["ended_at"])
+        if ended is None:
+            error = "Enter the date and time the machine went back into use."
+        elif not form["work_done"]:
+            error = "Say what was done, for example the repair carried out."
+        elif not form["carried_out_by"]:
+            error = "Say who carried out the work."
+        elif entry and ended < entry.started_at:
+            error = ("That is before the machine went out of service ("
+                     + uk_filter(entry.started_at) + ").")
+        elif ended > utcnow() + timedelta(minutes=5):
+            error = "That date and time is in the future."
+
+        if not error:
+            if not entry:           # should not happen, but keep the record complete
+                entry = OutOfServiceLog(machine_id=machine.id, started_at=ended,
+                                        reason="Not recorded")
+                db.session.add(entry)
+            entry.ended_at = ended
+            entry.work_done = form["work_done"][:2000]
+            entry.carried_out_by = form["carried_out_by"][:80]
+            entry.job_ref = form["job_ref"][:60] or None
+            machine.out_of_service = False
+            machine.out_of_service_note = None
+            resolved = 0
+            if form["resolve_faults"]:
+                for rpt in Report.query.filter_by(machine_id=machine.id, status="open"):
+                    rpt.status = "resolved"
+                    rpt.resolved_at = utcnow()
+                    resolved += 1
+            db.session.commit()
+            msg = f"{machine.name} is back in service."
+            if resolved:
+                msg += f" {resolved} open fault{'s' if resolved != 1 else ''} marked resolved."
+            flash(msg)
+            return redirect(_safe_next(url_for("out_of_service_view")))
+
+    return render_template(
+        "return_to_service.html", machine=machine, entry=entry, form=form,
+        error=error, open_faults=open_faults, next_url=_safe_next(""),
+    ), (400 if error else 200)
+
+
+@app.route("/out-of-service")
+@login_required
+def out_of_service_view():
+    current = [e for e in OutOfServiceLog.query.filter_by(ended_at=None)
+               .order_by(OutOfServiceLog.started_at).all() if e.machine.out_of_service]
+    history = (OutOfServiceLog.query.filter(OutOfServiceLog.ended_at.isnot(None))
+               .order_by(OutOfServiceLog.ended_at.desc()).all())
+    return render_template("out_of_service.html", current=current, history=history)
+
+
+@app.route("/out-of-service/export.csv")
+@login_required
+def export_out_of_service():
+    rows = []
+    for e in OutOfServiceLog.query.order_by(OutOfServiceLog.started_at.desc()).all():
+        rows.append([
+            e.machine.id, e.machine.name, e.machine.location,
+            to_uk(e.started_at).strftime("%Y-%m-%d %H:%M"), e.reason,
+            to_uk(e.ended_at).strftime("%Y-%m-%d %H:%M") if e.ended_at else "Still out of service",
+            duration_text(e.started_at, e.ended_at), e.work_done, e.carried_out_by, e.job_ref,
+        ])
+    return csv_response(
+        f"out-of-service-{to_uk(utcnow()).strftime('%Y-%m-%d')}.csv",
+        ["Machine ID", "Machine", "Location", "Out of service (UK time)", "Reason",
+         "Back in service (UK time)", "Time out of service", "Work done", "Carried out by",
+         "Job reference"],
+        rows)
+
+
+# --- Admin: edit a machine -------------------------------------------------
+@app.route("/machines/<machine_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_machine(machine_id):
+    machine = db.get_or_404(Machine, machine_id)
+    locations = sorted({m.location for m in Machine.query.all()})
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        location = (request.form.get("location") or "").strip()
+        asset_no = (request.form.get("asset_no") or "").strip()
+        if not (name and location):
+            flash("Name and location are both required.")
+        elif len(name) > 120 or len(location) > 120 or len(asset_no) > 40:
+            flash("One of those entries is too long.")
+        else:
+            machine.name, machine.location = name, location
+            machine.asset_no = asset_no or None
+            db.session.commit()
+            flash(f"Saved changes to {machine.name}.")
+            return redirect(url_for("machines_admin"))
+    return render_template("machine_edit.html", machine=machine, locations=locations)
 
 
 # --- Admin: service records ---------------------------------------------------
@@ -638,6 +959,9 @@ def apply_service_report(path):
         if row.get("out_of_service"):
             machine.out_of_service = True
             machine.out_of_service_note = row.get("out_of_service_note")
+            db.session.add(OutOfServiceLog(
+                machine_id=machine.id, started_at=found_at,
+                reason=f"{data['provider']} service finding: {row.get('notes') or 'Failed'}"))
     try:
         db.session.commit()
     except IntegrityError:      # another worker applied it at the same moment
@@ -670,6 +994,24 @@ def upgrade_database():
                 conn.execute(text("ALTER TABLE report ADD COLUMN safe_to_use VARCHAR(10)"))
         except Exception as exc:  # noqa: BLE001
             app.logger.warning("Could not add report.safe_to_use: %s", exc)
+
+    # Machines already out of service before the stoppage history existed.
+    try:
+        for machine in Machine.query.filter_by(out_of_service=True):
+            if not _open_oos_entry(machine.id):
+                rec = (ServiceRecord.query.filter_by(machine_id=machine.id, result="Fail")
+                       .order_by(ServiceRecord.service_date.desc()).first())
+                if rec:
+                    started = datetime(rec.service_date.year, rec.service_date.month,
+                                       rec.service_date.day, 12, 0)
+                    reason = f"{rec.provider} service finding: {rec.notes or 'Failed'}"
+                else:
+                    started, reason = utcnow(), machine.out_of_service_note or "Taken out of service"
+                db.session.add(OutOfServiceLog(machine_id=machine.id, started_at=started, reason=reason))
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not backfill out of service history: %s", exc)
 
     updates_dir = os.path.join(BASE_DIR, "scripts")
     for filename in sorted(os.listdir(updates_dir)):

@@ -1,0 +1,5 @@
+<div class="filter-group" style="margin-bottom:18px;">
+  <a href="{{ url_for('machines_admin') }}" class="{{ 'active' if equip_tab == 'machines' }}">Machines</a>
+  <a href="{{ url_for('service_view') }}" class="{{ 'active' if equip_tab == 'service' }}">Service records</a>
+  <a href="{{ url_for('qr_index') }}" class="{{ 'active' if equip_tab == 'qr' }}">QR codes</a>
+</div>

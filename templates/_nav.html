@@ -1,0 +1,6 @@
+<nav class="app-nav">
+  <a href="{{ url_for('log_view') }}" class="{{ 'active' if nav_active == 'faults' }}">Faults{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('out_of_service_view') }}" class="{{ 'active' if nav_active == 'oos' }}">Out of service{% if oos_count %}<span class="nav-count">{{ oos_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('machines_admin') }}" class="{{ 'active' if nav_active == 'equipment' }}">Equipment</a>
+  <a href="{{ url_for('logout') }}">Sign out</a>
+</nav>

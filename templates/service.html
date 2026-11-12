@@ -4,14 +4,9 @@
 <div class="app-shell">
   <div class="app-header">
     <h1>Service records</h1>
-    <nav class="app-nav">
-      <a href="{{ url_for('log_view') }}">Log{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('qr_index') }}">QR codes</a>
-      <a href="{{ url_for('machines_admin') }}">Machines</a>
-      <a href="{{ url_for('service_view') }}" class="active">Service</a>
-      <a href="{{ url_for('logout') }}">Sign out</a>
-    </nav>
+    {% set nav_active = "equipment" %}{% include "_nav.html" %}
   </div>
+  {% set equip_tab = "service" %}{% include "_equipment_tabs.html" %}
   <p style="color:var(--text-muted);font-size:13.5px;max-width:70ch;margin-top:-8px;">
     The most recent result for each active machine, taken from the service provider's report.
     Failed items are also in the fault log, where they are tracked until resolved.

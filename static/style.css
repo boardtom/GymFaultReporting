@@ -200,3 +200,10 @@ div.field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weigh
 tr.row-oos td{background:var(--warn-bg);}
 tr.row-oos td:first-child{box-shadow:inset 5px 0 0 var(--red);}
 tr.row-oos .badge{background:#fff;border:1px solid var(--red);}
+
+/* Links styled as small buttons */
+a.row-btn{display:inline-block;text-decoration:none;}
+.badge.repeat{background:var(--lightblue);color:var(--navy);}
+.section-title{font-size:15px;color:var(--navy);margin:0 0 10px;}
+input[type=search]{font:inherit;}
+.app-nav a .nav-count{margin-left:6px;}

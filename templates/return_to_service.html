@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Put back in service{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Put back in service</h1>
+    {% set nav_active = "oos" %}{% include "_nav.html" %}
+  </div>
+
+  <div class="card" style="max-width:640px;">
+    <div class="machine-card" style="margin-bottom:16px;">
+      <div class="machine-icon">{{ machine.name[:2]|upper }}</div>
+      <div>
+        <div class="machine-name">{{ machine.name }}</div>
+        <div class="machine-loc mono">{{ machine.location }} &middot; {{ machine.id }}</div>
+      </div>
+    </div>
+
+    {% if entry %}
+    <p style="margin:0 0 16px;font-size:13.5px;">
+      <strong>Out of service since {{ entry.started_at|uk }}</strong> ({{ duration_text(entry.started_at) }}).
+      {% if entry.reason %}<br><span style="color:var(--text-muted);">Reason: {{ entry.reason }}</span>{% endif %}
+    </p>
+    {% endif %}
+
+    {% if error %}<div class="flash" style="margin-bottom:14px;">{{ error }}</div>{% endif %}
+
+    <form method="post">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label class="field">
+        Date and time it went back into use (UK time)
+        <input type="datetime-local" name="ended_at" value="{{ form.ended_at }}" required>
+      </label>
+      <label class="field">
+        What was done
+        <textarea name="work_done" rows="4" required maxlength="2000" placeholder="e.g. Both cables replaced, tested under load and checked safe to use">{{ form.work_done }}</textarea>
+      </label>
+      <label class="field">
+        Carried out by
+        <input type="text" name="carried_out_by" value="{{ form.carried_out_by }}" required maxlength="80" placeholder="e.g. Gym Gear engineer (Justin Bradford), or a WI team member">
+      </label>
+      <label class="field">
+        Job or invoice reference (optional)
+        <input type="text" name="job_ref" value="{{ form.job_ref }}" maxlength="60" placeholder="e.g. Gym Gear job 17502">
+      </label>
+      {% if open_faults %}
+      <label style="display:flex;gap:10px;align-items:flex-start;font-size:13.5px;margin:4px 0 18px;">
+        <input type="checkbox" name="resolve_faults" value="1" {{ 'checked' if form.resolve_faults }} style="margin-top:3px;">
+        <span>Mark the {{ open_faults }} open fault{{ 's' if open_faults != 1 }} for this machine as resolved</span>
+      </label>
+      {% endif %}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary" style="width:auto;">Put back in service</button>
+        <a href="{{ next_url or url_for('out_of_service_view') }}" class="btn btn-ghost" style="width:auto;text-decoration:none;">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

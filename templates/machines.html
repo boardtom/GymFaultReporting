@@ -4,20 +4,16 @@
 <div class="app-shell">
   <div class="app-header">
     <h1>Machines</h1>
-    <nav class="app-nav">
-      <a href="{{ url_for('log_view') }}">Log{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('qr_index') }}">QR codes</a>
-      <a href="{{ url_for('machines_admin') }}" class="active">Machines</a>
-      <a href="{{ url_for('service_view') }}">Service</a>
-      <a href="{{ url_for('logout') }}">Sign out</a>
-    </nav>
+    {% set nav_active = "equipment" %}{% include "_nav.html" %}
   </div>
+  {% set equip_tab = "machines" %}{% include "_equipment_tabs.html" %}
 
   <div class="card" style="margin-bottom:18px;">
     <h2 style="font-size:14px;margin:0 0 6px;">Upload a list of machines</h2>
     <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px;">
       CSV file with three columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>.
       New IDs are added and existing IDs are updated, so you can upload again whenever the list changes.
+      <strong>Note:</strong> an upload overwrites the name and location of existing machines, including changes made with Edit.
     </p>
     <form method="post" action="{{ url_for('import_machines') }}" enctype="multipart/form-data" class="form-row" style="margin-bottom:0;">
       <label class="field">
@@ -49,12 +45,36 @@
     <strong>Deactivate</strong> hides a machine that has left the site.
   </p>
 
+  <div class="form-row" style="margin-bottom:12px;align-items:flex-end;">
+    <label class="field" style="flex:2;margin-bottom:0;">
+      Search
+      <input type="search" id="m-search" placeholder="Name, ID, serial number or asset number">
+    </label>
+    <label class="field" style="margin-bottom:0;">
+      Location
+      <select id="m-loc">
+        <option value="">All locations</option>
+        {% for loc in machines|map(attribute='location')|unique|sort %}<option value="{{ loc|lower }}">{{ loc }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field" style="margin-bottom:0;">
+      Status
+      <select id="m-status">
+        <option value="">All</option>
+        <option value="active">Active</option>
+        <option value="out">Out of service</option>
+        <option value="inactive">Inactive</option>
+      </select>
+    </label>
+  </div>
+  <p id="m-count" style="color:var(--text-muted);font-size:12.5px;margin:0 0 8px;"></p>
+
   <div class="table-wrap">
     <table>
       <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for m in machines %}
-        <tr>
+        <tr data-search="{{ (m.id ~ ' ' ~ m.name ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
           <td>{{ m.name }}{% if m.asset_no %}<div class="mono" style="color:var(--text-muted);font-size:11px;">Asset {{ m.asset_no }}</div>{% endif %}</td>
           <td>{{ m.location }}</td>
@@ -72,10 +92,9 @@
           </td>
           <td>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <a href="{{ url_for('edit_machine', machine_id=m.id) }}" class="row-btn">Edit</a>
               {% if m.out_of_service %}
-              <form method="post" action="{{ url_for('set_back_in_service', machine_id=m.id) }}">
-                <button type="submit" class="row-btn">Back in service</button>
-              </form>
+              <a href="{{ url_for('set_back_in_service', machine_id=m.id, next=request.path) }}" class="row-btn">Put back in service</a>
               {% elif m.active %}
               <form method="post" action="{{ url_for('set_out_of_service', machine_id=m.id) }}">
                 <button type="submit" class="row-btn">Out of service</button>
@@ -106,4 +125,24 @@
     </table>
   </div>
 </div>
+<script>
+(function () {
+  var rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr[data-search]'));
+  var q = document.getElementById('m-search'), loc = document.getElementById('m-loc'),
+      st = document.getElementById('m-status'), out = document.getElementById('m-count');
+  function apply() {
+    var text = q.value.trim().toLowerCase(), n = 0;
+    rows.forEach(function (r) {
+      var show = (!text || r.dataset.search.indexOf(text) !== -1) &&
+                 (!loc.value || r.dataset.loc === loc.value) &&
+                 (!st.value || r.dataset.status === st.value);
+      r.style.display = show ? '' : 'none';
+      if (show) n++;
+    });
+    out.textContent = 'Showing ' + n + ' of ' + rows.length + ' machines';
+  }
+  [q, loc, st].forEach(function (el) { el.addEventListener('input', apply); });
+  apply();
+})();
+</script>
 {% endblock %}

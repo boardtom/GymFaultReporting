@@ -4,13 +4,7 @@
 <div class="app-shell">
   <div class="app-header">
     <h1>Fault log</h1>
-    <nav class="app-nav">
-      <a href="{{ url_for('log_view') }}" class="active">Log{% if new_report_count %}<span class="nav-count">{{ new_report_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('qr_index') }}">QR codes</a>
-      <a href="{{ url_for('machines_admin') }}">Machines</a>
-      <a href="{{ url_for('service_view') }}">Service</a>
-      <a href="{{ url_for('logout') }}">Sign out</a>
-    </nav>
+    {% set nav_active = "faults" %}{% include "_nav.html" %}
   </div>
 
   {% if new_report_count %}
@@ -29,11 +23,15 @@
     <div class="stat"><div class="n">{{ resolved_count }}</div><div class="l">Resolved</div></div>
   </div>
 
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
   <div class="filter-group">
     <a href="{{ url_for('log_view', status='new') }}" class="{{ 'active' if status_filter == 'new' }}">New{% if new_report_count %} ({{ new_report_count }}){% endif %}</a>
     <a href="{{ url_for('log_view', status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All</a>
     <a href="{{ url_for('log_view', status='open') }}" class="{{ 'active' if status_filter == 'open' }}">Open</a>
     <a href="{{ url_for('log_view', status='resolved') }}" class="{{ 'active' if status_filter == 'resolved' }}">Resolved</a>
+    <a href="{{ url_for('log_view', status='repeat') }}" class="{{ 'active' if status_filter == 'repeat' }}">Repeat faults{% if repeats %} ({{ repeats|length }}){% endif %}</a>
+  </div>
+  <a href="{{ url_for('export_log', status=status_filter) }}" class="row-btn" style="margin-top:4px;">Download this view (CSV)</a>
   </div>
 
   <div class="table-wrap">
@@ -44,8 +42,9 @@
       <tbody>
         {% for r in reports %}
         <tr{% if r.machine.out_of_service %} class="row-oos"{% endif %}>
-          <td class="mono">{{ r.created_at.strftime('%d %b %H:%M') }}</td>
-          <td>{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div></td>
+          <td class="mono">{{ r.created_at|uk('%d %b %H:%M') }}</td>
+          <td>{{ r.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ r.machine.id }}</div>
+            {% if repeats.get(r.machine_id) %}<span class="badge repeat" style="margin-top:4px;white-space:nowrap;" title="{{ repeats[r.machine_id] }} reports in the last {{ repeat_days }} days">Repeat fault ({{ repeats[r.machine_id] }})</span>{% endif %}</td>
           <td>{{ r.machine.location }}</td>
           <td>{{ r.fault_type }}{% if r.details %}<div style="color:var(--text-muted);font-size:12px;">{{ r.details }}</div>{% endif %}</td>
           <td>
@@ -63,14 +62,11 @@
           <td>
             {% if r.machine.out_of_service %}
             <span class="badge open"><span class="dot"></span>Out of service</span>
-            <form method="post" action="{{ url_for('set_back_in_service', machine_id=r.machine.id) }}" style="margin-top:6px;">
-              <input type="hidden" name="from" value="log"><input type="hidden" name="status" value="{{ status_filter }}">
-              <button type="submit" class="row-btn">Put back in service</button>
-            </form>
+            <a href="{{ url_for('set_back_in_service', machine_id=r.machine.id, next=request.full_path) }}" class="row-btn" style="margin-top:6px;">Put back in service</a>
             {% else %}
             <span class="badge resolved"><span class="dot"></span>In service</span>
             <form method="post" action="{{ url_for('set_out_of_service', machine_id=r.machine.id) }}" style="margin-top:6px;">
-              <input type="hidden" name="from" value="log"><input type="hidden" name="status" value="{{ status_filter }}">
+              <input type="hidden" name="from" value="log"><input type="hidden" name="status" value="{{ status_filter }}"><input type="hidden" name="report_id" value="{{ r.id }}">
               <button type="submit" class="row-btn">Take out of service</button>
             </form>
             {% endif %}
@@ -96,7 +92,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="empty-row">{{ 'Nothing new to review.' if status_filter == 'new' else 'No reports in this view.' }}</td></tr>
+        <tr><td colspan="9" class="empty-row">{{ 'Nothing new to review.' if status_filter == 'new' else ('No repeat faults in the last ' ~ repeat_days ~ ' days.' if status_filter == 'repeat' else 'No reports in this view.') }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
