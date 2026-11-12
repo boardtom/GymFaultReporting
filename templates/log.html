@@ -36,7 +36,7 @@
 
   <div class="form-row filter-bar" style="margin-bottom:12px;align-items:flex-end;">
     <label class="field" style="margin-bottom:0;">Safe to use?
-      <select id="f-safe"><option value="">All</option><option value="2">No</option><option value="1">Not sure</option><option value="0">Yes</option><option value="-1">Not recorded</option></select>
+      <select id="f-safe"><option value="">All</option><option value="2">No</option><option value="1">Not sure</option><option value="0">Yes</option></select>
     </label>
     <label class="field" style="margin-bottom:0;">Severity
       <select id="f-sev"><option value="">All</option><option value="3">High</option><option value="2">Medium</option><option value="1">Low</option><option value="0">Not set</option></select>
@@ -80,7 +80,7 @@
           <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else (0 if r.safe_to_use == 'Yes' else -1)) }}">
             <form method="post" action="{{ url_for('set_report_safe', report_id=r.id, status=status_filter) }}">
               <select name="safe_to_use" class="sev-select" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
-                <option value="" {{ 'selected' if not r.safe_to_use }}>Not recorded</option>
+                {% if not r.safe_to_use %}<option value="" selected>Not recorded</option>{% endif %}
                 {% for a in safe_answers %}<option value="{{ a }}" {{ 'selected' if r.safe_to_use == a }}>{{ a }}</option>{% endfor %}
               </select>
             </form>
