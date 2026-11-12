@@ -80,7 +80,7 @@
           <td data-key="safe" data-v="{{ 2 if r.safe_to_use == 'No' else (1 if r.safe_to_use == 'Not sure' else (0 if r.safe_to_use == 'Yes' else -1)) }}">
             <form method="post" action="{{ url_for('set_report_safe', report_id=r.id, status=status_filter) }}">
               <select name="safe_to_use" class="sev-select" onchange="this.form.submit()" aria-label="Safe to use?"{% if r.safe_to_use in ('No', 'Not sure') %} style="color:var(--red);font-weight:700;"{% endif %}>
-                {% if not r.safe_to_use %}<option value="" selected>Not recorded</option>{% endif %}
+                {% if not r.safe_to_use %}<option value="" selected disabled>Select</option>{% endif %}
                 {% for a in safe_answers %}<option value="{{ a }}" {{ 'selected' if r.safe_to_use == a }}>{{ a }}</option>{% endfor %}
               </select>
             </form>
