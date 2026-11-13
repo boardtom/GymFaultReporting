@@ -113,12 +113,7 @@
                 <button type="submit" class="row-btn">Reactivate</button>
               </form>
               {% endif %}
-              {% set n = report_counts.get(m.id, 0) %}
-              <form method="post" action="{{ url_for('delete_machine', machine_id=m.id) }}"
-                    data-msg="Delete {{ m.name }} permanently?{% if n %} This also deletes {{ n }} fault report{{ 's' if n != 1 }} logged against it.{% endif %} This cannot be undone."
-                    onsubmit="return confirm(this.dataset.msg);">
-                <button type="submit" class="row-btn" style="color:var(--red);">Delete</button>
-              </form>
+              <a href="{{ url_for('delete_machine', machine_id=m.id) }}" class="row-btn" style="color:var(--red);">Delete</a>
             </div>
           </td>
         </tr>

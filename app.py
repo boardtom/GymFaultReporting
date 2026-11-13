@@ -71,6 +71,9 @@ db = SQLAlchemy(app)
 
 # --- Config from environment --------------------------------------------
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
+# A second, separate password that must be typed to delete a machine or area.
+# If it is not set, deleting is switched off altogether.
+MASTER_PASSWORD = os.environ.get("MASTER_PASSWORD", "")
 ALERT_TO = os.environ.get("ALERT_TO_EMAIL", "facilities@wellnessinternational.co.uk")
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000").rstrip("/")
 IS_PRODUCTION = APP_BASE_URL.startswith("https://")
@@ -339,6 +342,16 @@ def _login_blocked(ip):
     if len(_failed_logins) > 500:       # forget old addresses
         for key in [k for k, v in _failed_logins.items() if not v]:
             del _failed_logins[key]
+    return len(recent) >= LOGIN_MAX_FAILS
+
+
+_failed_master = defaultdict(list)
+
+
+def _master_blocked(ip):
+    now = time.time()
+    recent = [t for t in _failed_master[ip] if now - t < LOGIN_WINDOW_SECONDS]
+    _failed_master[ip] = recent
     return len(recent) >= LOGIN_MAX_FAILS
 
 
@@ -816,25 +829,60 @@ def activate_machine(machine_id):
     return redirect(url_for("machines_admin"))
 
 
-@app.route("/machines/<machine_id>/delete", methods=["POST"])
+def _delete_counts(machine):
+    """What deleting this machine would remove, so WI can see it first."""
+    report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
+    updates = (ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).count()
+               if report_ids else 0)
+    return {
+        "reports": len(report_ids),
+        "updates": updates,
+        "service": ServiceRecord.query.filter_by(machine_id=machine.id).count(),
+        "oos": OutOfServiceLog.query.filter_by(machine_id=machine.id).count(),
+    }
+
+
+@app.route("/machines/<machine_id>/delete", methods=["GET", "POST"])
 @login_required
 def delete_machine(machine_id):
-    """Remove a machine entirely, along with any fault reports logged
-    against it. Use Deactivate instead to keep the history."""
+    """Remove a machine entirely, along with its fault reports, progress
+    updates, service records and out of service history. This needs the
+    master password. Use Deactivate instead to keep the history."""
     machine = db.get_or_404(Machine, machine_id)
-    report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
-    if report_ids:
-        ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).delete(synchronize_session=False)
-    removed = Report.query.filter_by(machine_id=machine.id).delete()
-    ServiceRecord.query.filter_by(machine_id=machine.id).delete()
-    OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
-    db.session.delete(machine)
-    db.session.commit()
-    msg = f"Deleted {machine.name}"
-    if removed:
-        msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
-    flash(msg + ".")
-    return redirect(url_for("machines_admin"))
+    counts = _delete_counts(machine)
+    enabled = bool(MASTER_PASSWORD)
+    error = None
+
+    if request.method == "POST":
+        ip = request.remote_addr or "unknown"
+        if not enabled:
+            error = "Deleting is switched off because no master password has been set."
+        elif _master_blocked(ip):
+            error = "Too many incorrect attempts. Please wait 10 minutes and try again."
+        else:
+            supplied = (request.form.get("master_password") or "").encode("utf-8")
+            if hmac.compare_digest(supplied, MASTER_PASSWORD.encode("utf-8")):
+                _failed_master.pop(ip, None)
+                report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
+                if report_ids:
+                    ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).delete(synchronize_session=False)
+                removed = Report.query.filter_by(machine_id=machine.id).delete()
+                ServiceRecord.query.filter_by(machine_id=machine.id).delete()
+                OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
+                name, mid = machine.name, machine.id
+                db.session.delete(machine)
+                db.session.commit()
+                app.logger.warning("Machine deleted: %s (%s) with %d reports", name, mid, removed)
+                msg = f"Deleted {name}"
+                if removed:
+                    msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
+                flash(msg + ".")
+                return redirect(url_for("machines_admin"))
+            _failed_master[ip].append(time.time())
+            error = "Incorrect master password. Nothing has been deleted."
+
+    return render_template("delete_machine.html", machine=machine, counts=counts,
+                           enabled=enabled, error=error), (400 if error else 200)
 
 
 def _back_to_log_or_machines():

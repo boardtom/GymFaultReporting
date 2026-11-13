@@ -63,6 +63,8 @@ can re-run it any time the list changes.
 3. **Set the environment variables** (Render dashboard > your service >
    Environment). At minimum:
    - `ADMIN_PASSWORD` — a real password for `/log`, `/qr`, `/machines`
+   - `MASTER_PASSWORD` — a different password, typed to delete a machine or
+     area. If it is not set, deleting is switched off.
    - `APP_BASE_URL` — your Render URL once it's live, e.g.
      `https://fault-flag.onrender.com` (or your custom domain — see
      below). This is what gets baked into the QR codes and emails, so
