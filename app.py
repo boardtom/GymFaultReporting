@@ -153,16 +153,23 @@ UNASSESSED = "Unassessed"
 SAFE_ANSWERS = ["Yes", "No", "Not sure"]
 YES_NO = ["Yes", "No"]
 # Where a report has got to once WI has looked at it. Order matters: it is the sort order.
-PROGRESS_NEW = "New"
+PROGRESS_NEW = "Awaiting WI review"
 PROGRESS_REVIEWED = "Reviewed by WI"
+PROGRESS_RETURN = "Gym Gear visited, return visit needed"
 PROGRESS = [
     PROGRESS_NEW,
     PROGRESS_REVIEWED,
     "Gym Gear contacted",
-    "Gym Gear visited, may need to return",
-    "Awaiting parts",
+    "Gym Gear visit booked",
+    PROGRESS_RETURN,
     "Monitoring",
 ]
+# Older wording, moved to the current statuses at start-up.
+LEGACY_PROGRESS = {
+    "New": PROGRESS_NEW,
+    "Gym Gear visited, may need to return": PROGRESS_RETURN,
+    "Awaiting parts": PROGRESS_RETURN,
+}
 
 
 # --- Models ---------------------------------------------------------------
@@ -302,6 +309,8 @@ def duration_text(start, end=None):
 
 
 app.jinja_env.globals["duration_text"] = duration_text
+app.jinja_env.globals["PROGRESS_NEW"] = PROGRESS_NEW
+app.jinja_env.globals["PROGRESS_REVIEWED"] = PROGRESS_REVIEWED
 
 
 # --- Auth (single shared admin password, no user accounts) ---------------
@@ -315,7 +324,7 @@ def login_required(view):
 
 
 def new_reports_query():
-    """Reports nobody at WI has reviewed yet: still open and progress still 'New'."""
+    """Reports nobody at WI has reviewed yet: still open and progress still 'Awaiting WI review'."""
     return Report.query.filter(Report.status == "open", Report.progress == PROGRESS_NEW)
 
 
@@ -647,7 +656,7 @@ def _log_url(report_id):
 
 
 def _mark_reviewed(rpt, note):
-    """First touch by WI: move a 'New' report on and keep a note of why."""
+    """First touch by WI: move an 'Awaiting WI review' report on and keep a note of why."""
     if rpt.progress == PROGRESS_NEW:
         rpt.progress = PROGRESS_REVIEWED
         db.session.add(ReportUpdate(report_id=rpt.id, status=PROGRESS_REVIEWED, note=note))
@@ -1181,13 +1190,22 @@ def upgrade_database():
         except Exception as exc:  # noqa: BLE001
             app.logger.warning("Could not add report.safe_to_use: %s", exc)
 
-    for column, ddl in (("progress", "VARCHAR(60) NOT NULL DEFAULT 'New'"), ("follow_up", "DATE")):
+    for column, ddl in (("progress", "VARCHAR(60) NOT NULL DEFAULT 'Awaiting WI review'"), ("follow_up", "DATE")):
         if column not in report_cols:
             try:
                 with db.engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE report ADD COLUMN {column} {ddl}"))
             except Exception as exc:  # noqa: BLE001
                 app.logger.warning("Could not add report.%s: %s", column, exc)
+    try:
+        # Move older status wording to the current statuses (safe to repeat).
+        for old, new in LEGACY_PROGRESS.items():
+            Report.query.filter(Report.progress == old).update({"progress": new}, synchronize_session=False)
+            ReportUpdate.query.filter(ReportUpdate.status == old).update({"status": new}, synchronize_session=False)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not update older progress wording: %s", exc)
     try:
         # Reports that already have a severity were looked at before progress existed.
         n = Report.query.filter(Report.progress == PROGRESS_NEW, Report.severity.in_(SEVERITIES)) \

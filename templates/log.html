@@ -25,7 +25,7 @@
 
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
   <div class="filter-group">
-    <a href="{{ url_for('log_view', status='new') }}" class="{{ 'active' if status_filter == 'new' }}">New{% if new_report_count %} ({{ new_report_count }}){% endif %}</a>
+    <a href="{{ url_for('log_view', status='new') }}" class="{{ 'active' if status_filter == 'new' }}">Awaiting review{% if new_report_count %} ({{ new_report_count }}){% endif %}</a>
     <a href="{{ url_for('log_view', status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All</a>
     <a href="{{ url_for('log_view', status='open') }}" class="{{ 'active' if status_filter == 'open' }}">Open</a>
     <a href="{{ url_for('log_view', status='resolved') }}" class="{{ 'active' if status_filter == 'resolved' }}">Resolved</a>

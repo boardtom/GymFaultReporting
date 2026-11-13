@@ -1,5 +1,5 @@
 {# Needs: r (report), progress_options, today, status_filter #}
-<div><span class="badge {{ 'open' if r.progress == 'New' else 'prog' }}"><span class="dot"></span>{{ r.progress }}</span></div>
+<div><span class="badge {{ 'open' if r.progress == PROGRESS_NEW else 'prog' }}"><span class="dot"></span>{{ r.progress }}</span></div>
 {% if r.updates and r.updates[0].note %}<div class="prog-note">{{ r.updates[0].note }} <span class="prog-date">{{ r.updates[0].created_at|uk('%d %b') }}</span></div>{% endif %}
 {% if r.follow_up and r.status == 'open' %}
 <div class="prog-due{{ ' overdue' if r.follow_up <= today }}">Follow up by {{ r.follow_up.strftime('%d %b') }}{% if r.follow_up < today %} (overdue){% elif r.follow_up == today %} (today){% endif %}</div>
@@ -9,7 +9,7 @@
   <form method="post" action="{{ url_for('add_report_update', report_id=r.id, status=status_filter) }}" class="upd-form">
     <label>Progress
       <select name="status">
-        {% for p in progress_options %}{% if p != 'New' or r.progress == 'New' %}<option value="{{ p }}" {{ 'selected' if (r.progress == p and p != 'New') or (r.progress == 'New' and p == 'Reviewed by WI') }}>{{ p }}</option>{% endif %}{% endfor %}
+        {% for p in progress_options %}{% if p != PROGRESS_NEW or r.progress == PROGRESS_NEW %}<option value="{{ p }}" {{ 'selected' if (r.progress == p and p != PROGRESS_NEW) or (r.progress == PROGRESS_NEW and p == PROGRESS_REVIEWED) }}>{{ p }}</option>{% endif %}{% endfor %}
       </select>
     </label>
     <label>Note
