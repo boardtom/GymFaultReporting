@@ -387,10 +387,8 @@ def build_fault_email(report):
         f"{'Area' if area else 'Machine'}: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
         f"{'Issue' if area else 'Fault'}: {report.fault_type}\n"
-        + ("People stopped from using the area by member" if area
-           else "Red out of order hang tag placed by member")
-        + f": {report.hang_tag or 'Not asked'}\n"
-        f"Reported: {_local_time(report.created_at)}\n"
+        + ("" if area else f"Red out of order hang tag placed by member: {report.hang_tag or 'Not asked'}\n")
+        + f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
         + f"\nPlease review this report in the fault log and mark the {'area' if area else 'machine'} out of\n"
           "service if required.\n"
@@ -471,18 +469,18 @@ def report(machine_id):
 
     if request.method == "POST":
         fault_type = request.form.get("fault_type", "Other")
-        hang_tag = request.form.get("hang_tag", "")
+        hang_tag = "" if machine.is_area else request.form.get("hang_tag", "")
         details = request.form.get("details", "").strip()
 
         allowed = AREA_FAULT_TYPES if machine.is_area else FAULT_TYPES
-        if fault_type not in allowed or hang_tag not in YES_NO:
+        if fault_type not in allowed or (not machine.is_area and hang_tag not in YES_NO):
             abort(400)
 
         rpt = Report(
             machine_id=machine.id,
             fault_type=fault_type,
             severity=UNASSESSED,
-            hang_tag=hang_tag,
+            hang_tag=hang_tag or None,          # not asked for areas
             details=details or None,
         )
         db.session.add(rpt)

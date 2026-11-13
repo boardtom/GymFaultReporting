@@ -40,11 +40,10 @@
           </select>
         </label>
 
+        {% if not machine.is_area %}
         <div class="field">
-          {% if machine.is_area %}Have you stopped people using the area?
-          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">If it is not safe to use, please keep people out of the area until we have reviewed your report.</span>
-          {% else %}Have you placed a red out of order hang tag on the machine?
-          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">Please hang a red out of order tag on the machine until we have reviewed your report.</span>{% endif %}
+          Have you placed a red out of order hang tag on the machine?
+          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">Please hang a red out of order tag on the machine until we have reviewed your report.</span>
           <div class="severity-row">
             {% for ans in yes_no %}
             <label>
@@ -54,6 +53,7 @@
             {% endfor %}
           </div>
         </div>
+        {% endif %}
 
         <label class="field">
           Details (optional)
