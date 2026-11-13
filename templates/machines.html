@@ -11,7 +11,7 @@
   <div class="card" style="margin-bottom:18px;">
     <h2 style="font-size:14px;margin:0 0 6px;">Upload a list of machines</h2>
     <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px;">
-      CSV file with three columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>.
+      CSV file with three columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>, and an optional <span class="mono">type</span> column (equipment or area).
       New IDs are added and existing IDs are updated, so you can upload again whenever the list changes.
       <strong>Note:</strong> an upload overwrites the name and location of existing machines, including changes made with Edit.
     </p>
@@ -32,6 +32,10 @@
     <label class="field">
       Name
       <input type="text" name="name" placeholder="e.g. Treadmill 2" required>
+    </label>
+    <label class="field">
+      Type
+      <select name="kind"><option value="equipment">Equipment</option><option value="area">Area</option></select>
     </label>
     <label class="field">
       Location
@@ -74,16 +78,16 @@
       <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for m in machines %}
-        <tr data-search="{{ (m.id ~ ' ' ~ m.name ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
+        <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
-          <td>{{ m.name }}{% if m.asset_no %}<div class="mono" style="color:var(--text-muted);font-size:11px;">Asset {{ m.asset_no }}</div>{% endif %}</td>
+          <td>{{ m.name }}{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}{% if m.asset_no %}<div class="mono" style="color:var(--text-muted);font-size:11px;">Asset {{ m.asset_no }}</div>{% endif %}</td>
           <td>{{ m.location }}</td>
           <td>
             {% set sv = service.get(m.id) %}
             {% if sv %}
               <span class="mono" style="font-size:12px;">{{ sv.service_date.strftime('%d %b %Y') }}</span>
               <span class="badge {{ 'resolved' if sv.result == 'Pass' else 'open' }}"><span class="dot"></span>{{ sv.result }}</span>
-            {% else %}<span style="color:var(--text-muted);font-size:12px;">No record</span>{% endif %}
+            {% elif m.is_area %}<span style="color:var(--text-muted);font-size:12px;">Not applicable</span>{% else %}<span style="color:var(--text-muted);font-size:12px;">No record</span>{% endif %}
           </td>
           <td>
             {% if not m.active %}<span class="badge open"><span class="dot"></span>Inactive</span>

@@ -22,6 +22,13 @@
         <datalist id="locations">{% for loc in locations %}<option value="{{ loc }}">{% endfor %}</datalist>
       </label>
       <label class="field">
+        Type
+        <select name="kind">
+          <option value="equipment" {{ 'selected' if request.form.get('kind', machine.kind) == 'equipment' }}>Equipment (a machine)</option>
+          <option value="area" {{ 'selected' if request.form.get('kind', machine.kind) == 'area' }}>Area (padel court, pitch, studio)</option>
+        </select>
+      </label>
+      <label class="field">
         Service provider's asset number (optional)
         <input type="text" name="asset_no" value="{{ request.form.get('asset_no', machine.asset_no or '') }}" maxlength="40" placeholder="e.g. 23521">
       </label>

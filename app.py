@@ -129,6 +129,20 @@ FAULT_TYPES = [
     "Missing part",
     "Other",
 ]
+# A "machine" record is either a piece of equipment or an area (padel court, pitch, studio).
+KIND_EQUIPMENT = "equipment"
+KIND_AREA = "area"
+KINDS = [KIND_EQUIPMENT, KIND_AREA]
+AREA_FAULT_TYPES = [
+    "Surface or flooring",
+    "Lighting",
+    "Goals, nets or posts",
+    "Glass, walls, fencing or doors",
+    "Leak or flooding",
+    "Heating, cooling or ventilation",
+    "Cleanliness",
+    "Other",
+]
 # Severity is set by Wellness International at triage, not by the member.
 SEVERITIES = ["Low", "Medium", "High"]
 UNASSESSED = "Unassessed"
@@ -159,6 +173,12 @@ class Machine(db.Model):
     # Out of service: members see a "do not use" warning when they scan the code.
     out_of_service = db.Column(db.Boolean, nullable=False, default=False)
     out_of_service_note = db.Column(db.String(200), nullable=True)
+    # "equipment" (default) or "area": areas get their own questions and wording.
+    kind = db.Column(db.String(12), nullable=False, default=KIND_EQUIPMENT)
+
+    @property
+    def is_area(self):
+        return self.kind == KIND_AREA
 
 
 class Report(db.Model):
@@ -361,15 +381,18 @@ def _local_time(dt):
 
 def build_fault_email(report):
     """Return (subject, plain-text body) for a fault alert."""
-    subject = f"Equipment fault: {report.machine.name} ({report.machine.id})"
+    area = report.machine.is_area
+    subject = f"{'Area issue' if area else 'Equipment fault'}: {report.machine.name} ({report.machine.id})"
     body = (
-        f"Machine: {report.machine.name} ({report.machine.id})\n"
+        f"{'Area' if area else 'Machine'}: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
-        f"Fault: {report.fault_type}\n"
-        f"Red out of order hang tag placed by member: {report.hang_tag or 'Not asked'}\n"
+        f"{'Issue' if area else 'Fault'}: {report.fault_type}\n"
+        + ("People stopped from using the area by member" if area
+           else "Red out of order hang tag placed by member")
+        + f": {report.hang_tag or 'Not asked'}\n"
         f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
-        + "\nPlease review this report in the fault log and mark the machine out of\n"
+        + f"\nPlease review this report in the fault log and mark the {'area' if area else 'machine'} out of\n"
           "service if required.\n"
         + f"\nView in the fault log: {APP_BASE_URL}{url_for('log_view')}\n"
     )
@@ -451,7 +474,8 @@ def report(machine_id):
         hang_tag = request.form.get("hang_tag", "")
         details = request.form.get("details", "").strip()
 
-        if fault_type not in FAULT_TYPES or hang_tag not in YES_NO:
+        allowed = AREA_FAULT_TYPES if machine.is_area else FAULT_TYPES
+        if fault_type not in allowed or hang_tag not in YES_NO:
             abort(400)
 
         rpt = Report(
@@ -468,7 +492,8 @@ def report(machine_id):
         return render_template("confirm.html", machine=machine, email_sent=email_sent)
 
     return render_template(
-        "report.html", machine=machine, fault_types=FAULT_TYPES, yes_no=YES_NO
+        "report.html", machine=machine, yes_no=YES_NO,
+        fault_types=AREA_FAULT_TYPES if machine.is_area else FAULT_TYPES
     )
 
 
@@ -696,12 +721,15 @@ def machines_admin():
         machine_id = request.form.get("id", "").strip().upper()
         name = request.form.get("name", "").strip()
         location = request.form.get("location", "").strip()
+        kind = request.form.get("kind", KIND_EQUIPMENT)
+        if kind not in KINDS:
+            kind = KIND_EQUIPMENT
         if not (machine_id and name and location):
             flash("All fields are required.")
         elif db.session.get(Machine, machine_id):
             flash(f"Machine ID {machine_id} already exists.")
         else:
-            db.session.add(Machine(id=machine_id, name=name, location=location))
+            db.session.add(Machine(id=machine_id, name=name, location=location, kind=kind))
             db.session.commit()
             flash(f"Added {name}.")
         return redirect(url_for("machines_admin"))
@@ -723,6 +751,8 @@ def import_machine_rows(rows):
         machine_id = (row.get("id") or "").strip().upper()
         name = (row.get("name") or "").strip()
         location = (row.get("location") or "").strip()
+        kind = (row.get("type") or "").strip().lower()
+        kind = kind if kind in KINDS else None          # blank keeps what is already set
         if not (machine_id and name and location) or len(machine_id) > 20:
             skipped += 1
             continue
@@ -731,9 +761,12 @@ def import_machine_rows(rows):
             existing.name = name
             existing.location = location
             existing.active = True
+            if kind:
+                existing.kind = kind
             updated += 1
         else:
-            db.session.add(Machine(id=machine_id, name=name, location=location))
+            db.session.add(Machine(id=machine_id, name=name, location=location,
+                                   kind=kind or KIND_EQUIPMENT))
             added += 1
     db.session.commit()
     return added, updated, skipped
@@ -962,6 +995,9 @@ def edit_machine(machine_id):
         name = (request.form.get("name") or "").strip()
         location = (request.form.get("location") or "").strip()
         asset_no = (request.form.get("asset_no") or "").strip()
+        kind = request.form.get("kind", machine.kind)
+        if kind not in KINDS:
+            kind = machine.kind
         if not (name and location):
             flash("Name and location are both required.")
         elif len(name) > 120 or len(location) > 120 or len(asset_no) > 40:
@@ -969,6 +1005,7 @@ def edit_machine(machine_id):
         else:
             machine.name, machine.location = name, location
             machine.asset_no = asset_no or None
+            machine.kind = kind
             db.session.commit()
             flash(f"Saved changes to {machine.name}.")
             return redirect(url_for("machines_admin"))
@@ -981,7 +1018,8 @@ def edit_machine(machine_id):
 def service_view():
     result_filter = request.args.get("result", "all")
     latest = latest_service_by_machine()
-    machines = Machine.query.filter_by(active=True).order_by(Machine.location, Machine.name).all()
+    machines = (Machine.query.filter_by(active=True, kind=KIND_EQUIPMENT)
+                .order_by(Machine.location, Machine.name).all())
     rows = [(m, latest.get(m.id)) for m in machines]
     counts = {
         "pass": sum(1 for _, r in rows if r and r.result == "Pass"),
@@ -1061,6 +1099,7 @@ def upgrade_database():
         "asset_no": "VARCHAR(40)",
         "out_of_service": "BOOLEAN NOT NULL DEFAULT FALSE",
         "out_of_service_note": "VARCHAR(200)",
+        "kind": "VARCHAR(12) NOT NULL DEFAULT 'equipment'",
     }
     for column, ddl in additions.items():
         if column not in existing:
@@ -1150,6 +1189,22 @@ def upgrade_database():
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         app.logger.error("Could not rename Fitbox: %s", exc)
+
+    # One-off: add the areas that are reported on rather than a piece of equipment.
+    areas_key = "add-areas-2026-11-13"
+    try:
+        if not db.session.get(AppliedUpdate, areas_key) and Machine.query.count() > 0:
+            db.session.add(AppliedUpdate(key=areas_key))
+            for area_id, area_name in (("PAD-01", "Padel Court"), ("PIT-01", "Football Pitch"),
+                                       ("STU-01", "Studio")):
+                if not db.session.get(Machine, area_id):
+                    db.session.add(Machine(id=area_id, name=area_name, location=area_name,
+                                           kind=KIND_AREA))
+            db.session.commit()
+            app.logger.warning("Added the padel court, football pitch and studio")
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not add areas: %s", exc)
 
 
 # --- CLI ------------------------------------------------------------------

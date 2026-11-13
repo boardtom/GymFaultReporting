@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Report a fault{% endblock %}
+{% block title %}{{ "Report an issue" if machine.is_area else "Report a fault" }}{% endblock %}
 {% block body %}
 <div class="center-screen">
   <div class="phone-wrap">
@@ -27,22 +27,24 @@
 
       {% if machine.out_of_service %}
       <div class="oos-banner" role="alert">
-        <strong>Out of service. Please do not use this machine.</strong>
-        <span>{{ machine.out_of_service_note or "It is waiting for a repair. We are sorry for the inconvenience." }}</span>
+        <strong>{{ "Closed. Please do not use this area." if machine.is_area else "Out of service. Please do not use this machine." }}</strong>
+        <span>{{ machine.out_of_service_note or ("It is closed until the issue has been resolved. We are sorry for the inconvenience." if machine.is_area else "It is waiting for a repair. We are sorry for the inconvenience.") }}</span>
       </div>
       {% endif %}
 
       <form method="post">
         <label class="field">
-          {{ "Something else to report?" if machine.out_of_service else "What's wrong?" }}
+          {{ "Something else to report?" if machine.out_of_service else ("What is the issue?" if machine.is_area else "What's wrong?") }}
           <select name="fault_type" required>
             {% for ft in fault_types %}<option value="{{ ft }}">{{ ft }}</option>{% endfor %}
           </select>
         </label>
 
         <div class="field">
-          Have you placed a red out of order hang tag on the machine?
-          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">Please hang a red out of order tag on the machine until we have reviewed your report.</span>
+          {% if machine.is_area %}Have you stopped people using the area?
+          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">If it is not safe to use, please keep people out of the area until we have reviewed your report.</span>
+          {% else %}Have you placed a red out of order hang tag on the machine?
+          <span class="hint-text" style="display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;">Please hang a red out of order tag on the machine until we have reviewed your report.</span>{% endif %}
           <div class="severity-row">
             {% for ans in yes_no %}
             <label>
@@ -55,12 +57,12 @@
 
         <label class="field">
           Details (optional)
-          <textarea name="details" rows="3" placeholder="e.g. left pedal strap has snapped"></textarea>
+          <textarea name="details" rows="3" placeholder="{{ 'e.g. wet patch on the floor near the back wall' if machine.is_area else 'e.g. left pedal strap has snapped' }}"></textarea>
         </label>
 
         <button type="submit" class="btn btn-primary">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h16M13 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Report fault
+          {{ "Report issue" if machine.is_area else "Report fault" }}
         </button>
       </form>
     </div>

@@ -20,14 +20,14 @@
       <div class="tick">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
-      <h2>Fault reported</h2>
+      <h2>{{ "Issue reported" if machine.is_area else "Fault reported" }}</h2>
       {% if email_sent %}
         <p>Wellness International have been emailed about {{ machine.name }}. Thanks for flagging it.</p>
       {% else %}
         <p>Your report for {{ machine.name }} has been logged.</p>
         <p class="warn-note">The email alert couldn't be sent &mdash; check the mail settings.</p>
       {% endif %}
-      <a href="{{ url_for('report', machine_id=machine.id) }}" class="btn btn-ghost">Report another fault</a>
+      <a href="{{ url_for('report', machine_id=machine.id) }}" class="btn btn-ghost">{{ "Report another issue" if machine.is_area else "Report another fault" }}</a>
     </div>
   </div>
 </div>
