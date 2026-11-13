@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Delete fault report{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <div class="app-header">
+    <h1>Delete fault report</h1>
+    {% set nav_active = "faults" %}{% include "_nav.html" %}
+  </div>
+
+  <div class="card" style="max-width:640px;">
+    <div class="machine-card" style="margin-bottom:16px;">
+      <div class="machine-icon">{{ report.machine.name[:2]|upper }}</div>
+      <div>
+        <div class="machine-name">{{ report.machine.name }}</div>
+        <div class="machine-loc mono">{{ report.machine.location }} &middot; {{ report.machine.id }}</div>
+      </div>
+    </div>
+
+    <p style="margin:0 0 6px;font-size:13.5px;"><strong>{{ report.fault_type }}</strong> &middot; reported {{ report.created_at|uk }}</p>
+    {% if report.details %}<p style="margin:0 0 14px;font-size:13.5px;color:var(--text-muted);">{{ report.details }}</p>{% endif %}
+
+    {% if error %}<div class="flash" style="margin-bottom:14px;">{{ error }}</div>{% endif %}
+
+    <p style="margin:0 0 10px;font-size:14px;"><strong>Deleting this is permanent and cannot be undone.</strong>
+      {% if updates %}It also removes {{ updates }} progress update{{ 's' if updates != 1 }}.{% endif %}</p>
+    <p style="margin:0 0 16px;font-size:13.5px;color:var(--text-muted);">
+      For a real fault, use <strong>Mark resolved</strong> instead so the history is kept. Deleting is for test entries and mistakes.
+    </p>
+
+    {% if enabled %}
+    <form method="post" autocomplete="off">
+      <label class="field">
+        Master password
+        <input type="password" name="master_password" required autocomplete="off" autofocus>
+      </label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary" style="width:auto;background:var(--red);">Delete permanently</button>
+        <a href="{{ url_for('log_view', status=status) }}#report-{{ report.id }}" class="btn btn-ghost" style="width:auto;text-decoration:none;">Cancel</a>
+      </div>
+    </form>
+    {% else %}
+    <div class="flash" style="margin-bottom:14px;">Deleting is switched off because no master password has been set. Ask the person who looks after the app to add one.</div>
+    <a href="{{ url_for('log_view', status=status) }}" class="btn btn-ghost" style="width:auto;text-decoration:none;">Back to the fault log</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

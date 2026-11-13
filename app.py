@@ -355,6 +355,22 @@ def _master_blocked(ip):
     return len(recent) >= LOGIN_MAX_FAILS
 
 
+def _check_master_password():
+    """Check the master password in the submitted form. Returns None if it is
+    right, otherwise the message to show. Wrong attempts are limited per address."""
+    ip = request.remote_addr or "unknown"
+    if not MASTER_PASSWORD:
+        return "Deleting is switched off because no master password has been set."
+    if _master_blocked(ip):
+        return "Too many incorrect attempts. Please wait 10 minutes and try again."
+    supplied = (request.form.get("master_password") or "").encode("utf-8")
+    if hmac.compare_digest(supplied, MASTER_PASSWORD.encode("utf-8")):
+        _failed_master.pop(ip, None)
+        return None
+    _failed_master[ip].append(time.time())
+    return "Incorrect master password. Nothing has been deleted."
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -675,17 +691,28 @@ def add_report_update(report_id):
     return redirect(_log_url(rpt.id))
 
 
-@app.route("/log/<int:report_id>/delete", methods=["POST"])
+@app.route("/log/<int:report_id>/delete", methods=["GET", "POST"])
 @login_required
 def delete_report(report_id):
-    """Remove one fault report for good (for test entries and mistakes).
-    Real faults should be marked resolved instead, so the history is kept."""
+    """Remove one fault report for good (for test entries and mistakes). This
+    needs the master password. Real faults should be marked resolved instead,
+    so the history is kept."""
     rpt = db.get_or_404(Report, report_id)
-    name = rpt.machine.name
-    db.session.delete(rpt)
-    db.session.commit()
-    flash(f"Deleted the fault report for {name}.")
-    return redirect(url_for("log_view", status=request.args.get("status", "all")))
+    status = request.args.get("status", "all")
+    error = None
+    if request.method == "POST":
+        error = _check_master_password()
+        if error is None:
+            name, mid = rpt.machine.name, rpt.machine_id
+            ReportUpdate.query.filter_by(report_id=rpt.id).delete()
+            db.session.delete(rpt)
+            db.session.commit()
+            app.logger.warning("Fault report %s deleted (%s, %s)", report_id, name, mid)
+            flash(f"Deleted the fault report for {name}.")
+            return redirect(url_for("log_view", status=status))
+    return render_template("delete_report.html", report=rpt, status=status,
+                           updates=ReportUpdate.query.filter_by(report_id=rpt.id).count(),
+                           enabled=bool(MASTER_PASSWORD), error=error), (400 if error else 200)
 
 
 # --- Routes: QR codes ----------------------------------------------------
@@ -854,32 +881,23 @@ def delete_machine(machine_id):
     error = None
 
     if request.method == "POST":
-        ip = request.remote_addr or "unknown"
-        if not enabled:
-            error = "Deleting is switched off because no master password has been set."
-        elif _master_blocked(ip):
-            error = "Too many incorrect attempts. Please wait 10 minutes and try again."
-        else:
-            supplied = (request.form.get("master_password") or "").encode("utf-8")
-            if hmac.compare_digest(supplied, MASTER_PASSWORD.encode("utf-8")):
-                _failed_master.pop(ip, None)
-                report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
-                if report_ids:
-                    ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).delete(synchronize_session=False)
-                removed = Report.query.filter_by(machine_id=machine.id).delete()
-                ServiceRecord.query.filter_by(machine_id=machine.id).delete()
-                OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
-                name, mid = machine.name, machine.id
-                db.session.delete(machine)
-                db.session.commit()
-                app.logger.warning("Machine deleted: %s (%s) with %d reports", name, mid, removed)
-                msg = f"Deleted {name}"
-                if removed:
-                    msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
-                flash(msg + ".")
-                return redirect(url_for("machines_admin"))
-            _failed_master[ip].append(time.time())
-            error = "Incorrect master password. Nothing has been deleted."
+        error = _check_master_password()
+        if error is None:
+            report_ids = [r.id for r in Report.query.filter_by(machine_id=machine.id)]
+            if report_ids:
+                ReportUpdate.query.filter(ReportUpdate.report_id.in_(report_ids)).delete(synchronize_session=False)
+            removed = Report.query.filter_by(machine_id=machine.id).delete()
+            ServiceRecord.query.filter_by(machine_id=machine.id).delete()
+            OutOfServiceLog.query.filter_by(machine_id=machine.id).delete()
+            name, mid = machine.name, machine.id
+            db.session.delete(machine)
+            db.session.commit()
+            app.logger.warning("Machine deleted: %s (%s) with %d reports", name, mid, removed)
+            msg = f"Deleted {name}"
+            if removed:
+                msg += f" and {removed} fault report{'s' if removed != 1 else ''}"
+            flash(msg + ".")
+            return redirect(url_for("machines_admin"))
 
     return render_template("delete_machine.html", machine=machine, counts=counts,
                            enabled=enabled, error=error), (400 if error else 200)
