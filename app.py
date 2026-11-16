@@ -718,7 +718,24 @@ def add_report_update(report_id):
     rpt.follow_up = follow_up
     db.session.add(ReportUpdate(report_id=rpt.id, status=status, note=note, follow_up=follow_up))
     db.session.commit()
+    back = request.form.get("back", "")
+    if back.startswith("/machines/") and "//" not in back:
+        return redirect(back)
     return redirect(_log_url(rpt.id))
+
+
+@app.route("/machines/<machine_id>/history")
+@login_required
+def machine_history(machine_id):
+    """Everything recorded about one machine: its reports with their progress
+    updates, and the periods it was out of service."""
+    machine = db.get_or_404(Machine, machine_id)
+    reports = (Report.query.filter_by(machine_id=machine.id)
+               .order_by(Report.created_at.desc()).all())
+    oos = (OutOfServiceLog.query.filter_by(machine_id=machine.id)
+           .order_by(OutOfServiceLog.started_at.desc()).all())
+    return render_template("machine_history.html", machine=machine, reports=reports, oos=oos,
+                           progress_options=PROGRESS, today=to_uk(utcnow()).date())
 
 
 @app.route("/log/<int:report_id>/delete", methods=["GET", "POST"])

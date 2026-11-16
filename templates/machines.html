@@ -85,7 +85,7 @@
         {% for m in machines %}
         <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.serial_no or '') ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
-          <td>{{ m.name }}{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}</td>
+          <td><a href="{{ url_for('machine_history', machine_id=m.id) }}" style="color:inherit;font-weight:600;">{{ m.name }}</a>{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}</td>
           <td class="mono" style="font-size:12px;">{{ m.serial_no or '' }}</td>
           <td class="mono" style="font-size:12px;">{{ m.asset_no or '' }}</td>
           <td>{{ m.location }}</td>

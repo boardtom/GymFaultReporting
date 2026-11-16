@@ -245,3 +245,11 @@ details.upd>summary::-webkit-details-marker{display:none;}
 
 .progress-cell{min-width:200px;max-width:250px;}
 .app-shell.wide .badge.prog{white-space:normal;line-height:1.3;}
+
+.upd-links{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.upd-links a.row-btn{text-decoration:none;display:inline-block;}
+dialog.upd-dialog{border:1px solid var(--border);border-radius:12px;padding:0;max-width:380px;width:92vw;box-shadow:0 12px 40px rgba(3,18,82,.25);}
+dialog.upd-dialog::backdrop{background:rgba(3,18,82,.35);}
+dialog.upd-dialog .upd-form{margin:0;border:0;padding:18px;}
+.tl{margin:0 0 22px;}
+.tl .card{margin-bottom:14px;}

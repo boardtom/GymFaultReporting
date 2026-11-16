@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ machine.name }} history{% endblock %}
+{% block body %}
+<div class="app-shell wide">
+  <div class="app-header">
+    <h1>{{ machine.name }}</h1>
+    {% set nav_active = "equipment" %}{% include "_nav.html" %}
+  </div>
+
+  <p style="color:var(--text-muted);margin:0 0 18px;">
+    <span class="mono">{{ machine.id }}</span> &middot; {{ machine.location }}
+    {% if machine.serial_no %}&middot; Serial {{ machine.serial_no }}{% endif %}
+    {% if machine.asset_no %}&middot; Asset {{ machine.asset_no }}{% endif %}
+    &middot; {% if machine.out_of_service %}<strong>Out of service</strong>{% elif machine.active %}In service{% else %}Inactive{% endif %}
+    &middot; <a href="{{ url_for('machines_admin') }}">Back to machines</a>
+  </p>
+
+  <h2 class="section-title">Fault reports ({{ reports|length }})</h2>
+  {% for r in reports %}
+  <div class="card tl" id="report-{{ r.id }}">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <strong>{{ r.fault_type }}</strong>
+        <span style="color:var(--text-muted);font-size:12px;">reported {{ r.created_at|uk('%d %b %Y %H:%M') }}</span>
+        {% if r.details %}<div style="margin-top:4px;">{{ r.details }}</div>{% endif %}
+      </div>
+      <div>
+        <span class="badge {{ 'resolved' if r.status == 'resolved' else 'open' }}"><span class="dot"></span>{{ 'Resolved' if r.status == 'resolved' else 'Open' }}</span>
+        <span class="badge prog"><span class="dot"></span>{{ r.progress }}</span>
+      </div>
+    </div>
+    {% if r.severity %}<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Severity: {{ r.severity }}{% if r.resolved_at %} &middot; Resolved {{ r.resolved_at|uk('%d %b %Y %H:%M') }}{% endif %}</div>{% endif %}
+    {% if r.updates %}
+    <ol class="upd-hist">
+      {% for u in r.updates %}<li><strong>{{ u.status }}</strong> <span class="prog-date">{{ u.created_at|uk('%d %b %Y %H:%M') }}</span>{% if u.note %}<div>{{ u.note }}</div>{% endif %}{% if u.follow_up %}<div class="prog-date">Follow up by {{ u.follow_up.strftime('%d %b %Y') }}</div>{% endif %}</li>{% endfor %}
+    </ol>
+    {% else %}<p style="color:var(--text-muted);font-size:13px;margin:8px 0 0;">No updates recorded yet.</p>{% endif %}
+    {% set compact = true %}{% set back = url_for('machine_history', machine_id=machine.id) ~ '#report-' ~ r.id %}{% set status_filter = 'all' %}
+    <div style="margin-top:8px;">{% include "_progress_cell.html" %}</div>
+  </div>
+  {% else %}
+  <p style="color:var(--text-muted);">No fault reports for this machine.</p>
+  {% endfor %}
+
+  <h2 class="section-title" style="margin-top:28px;">Out of service ({{ oos|length }})</h2>
+  {% if oos %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Out since</th><th>Reason</th><th>Back in service</th><th>Work done</th><th>By</th><th>Job ref</th></tr></thead>
+      <tbody>
+        {% for e in oos %}
+        <tr>
+          <td>{{ e.started_at|uk }}</td>
+          <td style="max-width:36ch;">{{ e.reason or '' }}</td>
+          <td>{% if e.ended_at %}{{ e.ended_at|uk }}<div style="color:var(--text-muted);font-size:12px;">{{ duration_text(e.started_at, e.ended_at) }}</div>{% else %}<strong>Still out</strong>{% endif %}</td>
+          <td style="max-width:40ch;">{{ e.work_done or '' }}</td>
+          <td>{{ e.carried_out_by or '' }}</td>
+          <td class="mono">{{ e.job_ref or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p style="color:var(--text-muted);">Never taken out of service.</p>{% endif %}
+</div>
+{% endblock %}
