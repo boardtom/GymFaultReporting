@@ -566,6 +566,27 @@ def repeat_counts():
     return {machine_id: n for machine_id, n in rows if n >= 2}
 
 
+# A machine taken out of service this many times within this many days is flagged.
+OOS_REPEAT_COUNT = 3
+OOS_REPEAT_DAYS = 183   # about six months
+
+
+def frequent_failures():
+    """Machines taken out of service OOS_REPEAT_COUNT or more times in the last
+    six months: {machine_id: count}. Counts each out-of-service period, including
+    one that is still open."""
+    cutoff = utcnow() - timedelta(days=OOS_REPEAT_DAYS)
+    rows = (db.session.query(OutOfServiceLog.machine_id, db.func.count(OutOfServiceLog.id))
+            .filter(OutOfServiceLog.started_at >= cutoff)
+            .group_by(OutOfServiceLog.machine_id).all())
+    return {machine_id: n for machine_id, n in rows if n >= OOS_REPEAT_COUNT}
+
+
+@app.context_processor
+def _frequent_failure_globals():
+    return {"OOS_REPEAT_COUNT": OOS_REPEAT_COUNT}
+
+
 def reports_for_filter(status_filter):
     query = Report.query
     if status_filter in ("open", "resolved"):
@@ -608,6 +629,7 @@ def log_view():
         today=to_uk(utcnow()).date(),
         repeats=repeats,
         repeat_days=REPEAT_DAYS,
+        frequent=frequent_failures(),
         show_new_prompt=session.pop("new_prompt", False),
     )
 
@@ -735,6 +757,7 @@ def machine_history(machine_id):
     oos = (OutOfServiceLog.query.filter_by(machine_id=machine.id)
            .order_by(OutOfServiceLog.started_at.desc()).all())
     return render_template("machine_history.html", machine=machine, reports=reports, oos=oos,
+                           frequent=frequent_failures().get(machine.id),
                            progress_options=PROGRESS, today=to_uk(utcnow()).date())
 
 
@@ -829,7 +852,7 @@ def machines_admin():
         .group_by(Report.machine_id).all()
     )
     return render_template("machines.html", machines=machines, report_counts=report_counts,
-                           service=latest_service_by_machine())
+                           service=latest_service_by_machine(), frequent=frequent_failures())
 
 
 def import_machine_rows(rows):
@@ -1102,7 +1125,7 @@ def out_of_service_view():
         if rpt:
             latest[e.machine_id] = rpt
     return render_template("out_of_service.html", current=current, history=history,
-                           latest=latest, today=to_uk(utcnow()).date())
+                           latest=latest, today=to_uk(utcnow()).date(), frequent=frequent_failures())
 
 
 @app.route("/out-of-service/export.csv")

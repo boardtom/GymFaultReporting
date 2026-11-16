@@ -253,3 +253,4 @@ dialog.upd-dialog::backdrop{background:rgba(3,18,82,.35);}
 dialog.upd-dialog .upd-form{margin:0;border:0;padding:18px;}
 .tl{margin:0 0 22px;}
 .tl .card{margin-bottom:14px;}
+.badge.freq{background:#fde7ec;color:var(--red);}

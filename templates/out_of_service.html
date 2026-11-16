@@ -14,7 +14,7 @@
       <tbody>
         {% for e in current %}
         <tr class="row-oos">
-          <td>{{ e.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ e.machine.id }}</div></td>
+          <td>{{ e.machine.name }}<div class="mono" style="color:var(--text-muted);font-size:11px;">{{ e.machine.id }}</div>{% if frequent.get(e.machine_id) %}<span class="badge freq" style="margin-top:4px;white-space:nowrap;">Frequent failures ({{ frequent[e.machine_id] }} in 6 months)</span>{% endif %}</td>
           <td>{{ e.machine.location }}</td>
           <td>{{ e.started_at|uk }}<div style="color:var(--text-muted);font-size:12px;">{{ duration_text(e.started_at) }} so far</div></td>
           <td style="max-width:46ch;">{{ e.reason or "" }}</td>

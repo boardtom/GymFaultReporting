@@ -15,6 +15,12 @@
     &middot; <a href="{{ url_for('machines_admin') }}">Back to machines</a>
   </p>
 
+  {% if frequent %}
+  <div class="card" style="border-color:var(--red);background:#fff5f7;margin-bottom:18px;">
+    <strong style="color:var(--red);">Frequent failures:</strong> taken out of service {{ frequent }} times in the last 6 months. Worth raising with the contractor.
+  </div>
+  {% endif %}
+
   <h2 class="section-title">Fault reports ({{ reports|length }})</h2>
   {% for r in reports %}
   <div class="card tl" id="report-{{ r.id }}">

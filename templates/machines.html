@@ -73,6 +73,7 @@
         <option value="active">Active</option>
         <option value="out">Out of service</option>
         <option value="inactive">Inactive</option>
+        <option value="frequent">Frequent failures</option>
       </select>
     </label>
   </div>
@@ -83,9 +84,9 @@
       <thead><tr><th>ID</th><th>Name</th><th>Serial number</th><th>Asset no.</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for m in machines %}
-        <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.serial_no or '') ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
+        <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.serial_no or '') ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}" data-freq="{{ 1 if frequent.get(m.id) else 0 }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
-          <td><a href="{{ url_for('machine_history', machine_id=m.id) }}" style="color:inherit;font-weight:600;">{{ m.name }}</a>{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}</td>
+          <td><a href="{{ url_for('machine_history', machine_id=m.id) }}" style="color:inherit;font-weight:600;">{{ m.name }}</a>{% if frequent.get(m.id) %} <span class="badge freq" style="margin-left:4px;white-space:nowrap;" title="Taken out of service {{ frequent[m.id] }} times in the last 6 months">Frequent failures ({{ frequent[m.id] }} in 6 months)</span>{% endif %}{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}</td>
           <td class="mono" style="font-size:12px;">{{ m.serial_no or '' }}</td>
           <td class="mono" style="font-size:12px;">{{ m.asset_no or '' }}</td>
           <td>{{ m.location }}</td>
@@ -141,7 +142,7 @@
     rows.forEach(function (r) {
       var show = (!text || r.dataset.search.indexOf(text) !== -1) &&
                  (!loc.value || r.dataset.loc === loc.value) &&
-                 (!st.value || r.dataset.status === st.value);
+                 (!st.value || (st.value === 'frequent' ? r.dataset.freq === '1' : r.dataset.status === st.value));
       r.style.display = show ? '' : 'none';
       if (show) n++;
     });
