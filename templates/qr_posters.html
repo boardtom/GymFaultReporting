@@ -1,0 +1,42 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>QR posters</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>
+@font-face{font-family:"DM Sans";src:url("{{ url_for('static', filename='fonts/DMSans-var.ttf') }}");font-weight:100 1000;}
+@page{size:210mm 297mm;margin:0}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:"DM Sans",Arial,sans-serif;color:#031252;background:#e9ebf3}
+.bar{position:sticky;top:0;z-index:5;background:#031252;color:#fff;padding:10px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px}
+.bar button,.bar a{font:inherit;font-weight:700;border-radius:8px;padding:7px 14px;border:0;cursor:pointer;text-decoration:none}
+.bar button{background:#A0002A;color:#fff}.bar a{background:#E4E9FE;color:#031252}
+.page{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff;margin:14px auto;box-shadow:0 2px 12px rgba(3,18,82,.2);page-break-after:always;break-after:page}
+.page:last-child{page-break-after:auto;break-after:auto}
+@media print{body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none}}
+
+.page:before{content:"";position:absolute;left:0;top:0;right:0;height:9mm;background:#031252}
+.page:after{content:"";position:absolute;left:0;bottom:0;right:0;height:9mm;background:#A0002A}
+.inner{position:absolute;left:15mm;right:15mm;top:22mm;bottom:22mm;display:flex;flex-direction:column;align-items:center;text-align:center}
+.logos{display:flex;align-items:center;gap:7mm}.logos .wi{height:17mm}.logos .ad{height:22mm}.logos .div{width:.5mm;height:19mm;background:#DBDBDB}
+.head{font-size:46pt;font-weight:800;color:#A0002A;line-height:1.05;margin-top:14mm}
+.sub{font-size:19pt;line-height:1.3;margin-top:5mm;max-width:150mm}
+.qrbox{margin-top:12mm;padding:7mm;border:.8mm solid #031252;border-radius:5mm}
+.qr{width:118mm;height:118mm}.qr svg{width:100%;height:100%;display:block}
+.rule{width:40mm;height:.8mm;background:#DBDBDB;margin:11mm 0 7mm}
+.name{font-size:36pt;font-weight:800;line-height:1.1}
+.note{font-size:13pt;margin-top:4mm;color:#444}
+.ref{position:absolute;right:0;bottom:-8mm;font-size:8pt;color:#8a8fa8}
+</style></head><body>
+<div class="bar"><strong>{{ areas|length }} area poster{{ 's' if areas|length != 1 }}, A4</strong>
+<button onclick="window.print()">Print</button>
+<span>Print on A4 at <strong>100% scale</strong>, margins <strong>None</strong>, background graphics on.</span>
+<a href="{{ url_for('qr_index') }}">Back</a></div>
+{% for m in areas %}<section class="page"><div class="inner">
+<div class="logos"><img src="{{ url_for('static', filename='logo-wellness.png') }}" class="wi" alt="Wellness International"><span class="div"></span><img src="{{ url_for('static', filename='logo-adidas.png') }}" class="ad" alt="adidas"></div>
+<div class="head">Spotted a problem?</div>
+<div class="sub">Scan the code with your phone camera to report an issue with this area.</div>
+<div class="qrbox"><div class="qr">{{ m.qr_svg|safe }}</div></div>
+<div class="rule"></div>
+<div class="name">{{ m.name }}</div>
+<div class="note">Your report goes straight to the Wellness International team.</div>
+<div class="ref">{{ m.id }}</div>
+</div></section>{% else %}<p style="padding:30px;">No areas to print.</p>{% endfor %}
+</body></html>

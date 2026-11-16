@@ -1,0 +1,44 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>QR stickers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>
+@font-face{font-family:"DM Sans";src:url("{{ url_for('static', filename='fonts/DMSans-var.ttf') }}");font-weight:100 1000;}
+@page{size:210mm 297mm;margin:0}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:"DM Sans",Arial,sans-serif;color:#031252;background:#e9ebf3}
+.bar{position:sticky;top:0;z-index:5;background:#031252;color:#fff;padding:10px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px}
+.bar button,.bar a{font:inherit;font-weight:700;border-radius:8px;padding:7px 14px;border:0;cursor:pointer;text-decoration:none}
+.bar button{background:#A0002A;color:#fff}.bar a{background:#E4E9FE;color:#031252}
+.page{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff;margin:14px auto;box-shadow:0 2px 12px rgba(3,18,82,.2);page-break-after:always;break-after:page}
+.page:last-child{page-break-after:auto;break-after:auto}
+@media print{body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none}}
+
+.cell{position:absolute;width:105mm;height:74.25mm}
+.label{position:absolute;inset:6mm;display:flex;gap:5mm;align-items:center}
+.qr{flex:0 0 44mm;width:44mm;height:44mm}.qr svg{width:100%;height:100%;display:block}
+.txt{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;justify-content:center}
+.head{font-size:13pt;font-weight:700;line-height:1.1;color:#A0002A}
+.sub{font-size:8pt;line-height:1.25;margin-top:1.2mm}
+.rule{height:.4mm;background:#DBDBDB;margin:2.6mm 0}
+.ref{position:absolute;right:0;bottom:-3mm;font-size:5.5pt;color:#8a8fa8;letter-spacing:.02em}
+.name{font-size:12pt;font-weight:700;line-height:1.15}
+.loc{font-size:9pt;margin-top:1mm}
+.logos{display:flex;align-items:center;gap:2.5mm;margin-top:3.5mm}
+.logos .wi{height:5mm}.logos .ad{height:6.5mm}.logos .div{width:.3mm;height:6mm;background:#DBDBDB}
+</style></head><body>
+<div class="bar"><strong>{{ count }} sticker{{ 's' if count != 1 }}{% if location %} ({{ location }}){% endif %}, {{ pages|length }} page{{ 's' if pages|length != 1 }}</strong>
+<button onclick="window.print()">Print</button>
+<span>Print on A4 at <strong>100% scale</strong> (not "fit to page"), margins set to <strong>None</strong>, background graphics on.</span>
+<a href="{{ url_for('qr_index') }}">Back</a></div>
+{% for page in pages %}<section class="page">
+{% for m in page %}<div class="cell" style="left:{{ (loop.index0 % 2) * 105 }}mm;top:{{ (loop.index0 // 2) * 74.25 }}mm"><div class="label">
+<div class="qr">{{ m.qr_svg|safe }}</div>
+<div class="txt">
+<div class="head">{{ 'Spotted a problem?' if m.is_area else 'Something not working?' }}</div>
+<div class="sub">{{ 'Scan to report an issue with this area.' if m.is_area else 'Scan to report a fault with this equipment.' }}</div>
+<div class="rule"></div>
+<div class="name">{{ m.name }}</div>
+{% if m.location != m.name %}<div class="loc">{{ m.location }}</div>{% endif %}
+<div class="logos"><img src="{{ url_for('static', filename='logo-wellness.png') }}" class="wi" alt="Wellness International"><span class="div"></span><img src="{{ url_for('static', filename='logo-adidas.png') }}" class="ad" alt="adidas"></div>
+</div><div class="ref">{{ m.id }}</div></div></div>{% endfor %}
+</section>{% else %}<p style="padding:30px;">No machines to print.</p>{% endfor %}
+</body></html>

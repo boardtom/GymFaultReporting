@@ -15,6 +15,7 @@ Deploy: see README.md for Render setup.
 import os
 import re
 import io
+import zipfile
 import csv
 import hmac
 import time
@@ -816,7 +817,8 @@ def qr_index():
             "url": url,
             "data_uri": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
         }
-    return render_template("qr_index.html", machines=machines, qr_data=qr_data)
+    locations = sorted({m.location for m in machines})
+    return render_template("qr_index.html", machines=machines, qr_data=qr_data, locations=locations)
 
 
 @app.route("/qr/<machine_id>.png")
@@ -826,6 +828,62 @@ def qr_png(machine_id):
     png = _qr_png_bytes(_machine_report_url(machine.id))
     return send_file(io.BytesIO(png), mimetype="image/png",
                      download_name=f"{machine.id}-qr.png")
+
+
+def _qr_svg(url):
+    """A crisp vector QR code, for printing at any size."""
+    q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0, box_size=10)
+    q.add_data(url)
+    q.make(fit=True)
+    matrix = q.get_matrix()
+    n = len(matrix)
+    d = "".join(f"M{x},{y}h1v1h-1z" for y, row in enumerate(matrix) for x, v in enumerate(row) if v)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {n} {n}" '
+            f'shape-rendering="crispEdges"><path d="{d}" fill="#000"/></svg>')
+
+
+def _print_machines(kind, location=""):
+    query = Machine.query.filter_by(active=True, kind=kind)
+    if location:
+        query = query.filter(Machine.location == location)
+    machines = query.order_by(Machine.location, Machine.name).all()
+    for m in machines:
+        m.qr_svg = _qr_svg(_machine_report_url(m.id))
+    return machines
+
+
+@app.route("/qr/stickers")
+@login_required
+def qr_stickers():
+    """Print-ready sticker sheets: 105 x 74.25 mm labels, 8 to an A4 page."""
+    location = request.args.get("location", "")
+    kinds = [KIND_EQUIPMENT, KIND_AREA]
+    machines = []
+    for kind in kinds:
+        machines += _print_machines(kind, location)
+    pages = [machines[i:i + 8] for i in range(0, len(machines), 8)]
+    return render_template("qr_stickers.html", pages=pages, count=len(machines), location=location)
+
+
+@app.route("/qr/posters")
+@login_required
+def qr_posters():
+    """One A4 poster for each area (padel court, football pitch, studio)."""
+    return render_template("qr_posters.html", areas=_print_machines(KIND_AREA))
+
+
+@app.route("/qr/all.zip")
+@login_required
+def qr_zip():
+    """Every active machine's QR code as a PNG, named by ID and name."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for m in Machine.query.filter_by(active=True).order_by(Machine.location, Machine.name):
+            safe = re.sub(r'[\\/:*?"<>|]+', "-", m.name).strip()
+            zf.writestr(f"{m.id} {safe}.png", _qr_png_bytes(_machine_report_url(m.id)))
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip",
+                     download_name=f"fault-flag-qr-codes-{to_uk(utcnow()).strftime('%Y-%m-%d')}.zip")
 
 
 # --- Admin: manage machine list -------------------------------------------

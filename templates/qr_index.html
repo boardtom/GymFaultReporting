@@ -11,6 +11,17 @@
     Each code links straight to that machine's report form. Right-click &rarr; save, or download the PNG, to print and fix to the equipment.
   </p>
 
+  <div class="card" style="margin:14px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <form method="get" action="{{ url_for('qr_stickers') }}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;">
+      <select name="location" aria-label="Location" style="font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+        <option value="">All locations</option>
+        {% for loc in locations %}<option value="{{ loc }}">{{ loc }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary" style="width:auto;padding:8px 14px;font-size:13px;">Print sticker sheets</button>
+    </form>
+    <a href="{{ url_for('qr_posters') }}" class="row-btn" style="text-decoration:none;">Print area posters</a>
+    <a href="{{ url_for('qr_zip') }}" class="row-btn" style="text-decoration:none;">Download all as ZIP</a>
+  </div>
   <div class="qr-grid" style="margin-top:18px;">
     {% for m in machines %}
     <div class="qr-card">
