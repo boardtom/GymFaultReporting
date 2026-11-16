@@ -29,6 +29,10 @@
         </select>
       </label>
       <label class="field">
+        Serial number (optional)
+        <input type="text" name="serial_no" value="{{ request.form.get('serial_no', machine.serial_no or '') }}" maxlength="80" placeholder="e.g. 300113082, or Model PG10">
+      </label>
+      <label class="field">
         Service provider's asset number (optional)
         <input type="text" name="asset_no" value="{{ request.form.get('asset_no', machine.asset_no or '') }}" maxlength="40" placeholder="e.g. 23521">
       </label>

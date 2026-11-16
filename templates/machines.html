@@ -11,7 +11,8 @@
   <div class="card" style="margin-bottom:18px;">
     <h2 style="font-size:14px;margin:0 0 6px;">Upload a list of machines</h2>
     <p style="margin:0 0 14px;color:var(--text-muted);font-size:13px;">
-      CSV file with three columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>, and an optional <span class="mono">type</span> column (equipment or area).
+      CSV file with columns named <span class="mono">id</span>, <span class="mono">name</span> and <span class="mono">location</span>, and optional <span class="mono">serial</span>, <span class="mono">asset_no</span> and <span class="mono">type</span> (equipment or area) columns.
+      <a href="{{ url_for('export_machines') }}">Download the current list as CSV</a> to get the right layout.
       New IDs are added and existing IDs are updated, so you can upload again whenever the list changes.
       <strong>Note:</strong> an upload overwrites the name and location of existing machines, including changes made with Edit.
     </p>
@@ -36,6 +37,10 @@
     <label class="field">
       Type
       <select name="kind"><option value="equipment">Equipment</option><option value="area">Area</option></select>
+    </label>
+    <label class="field">
+      Serial number
+      <input type="text" name="serial_no" placeholder="Optional" maxlength="80">
     </label>
     <label class="field">
       Location
@@ -75,12 +80,14 @@
 
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Serial number</th><th>Asset no.</th><th>Location</th><th>Last service</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for m in machines %}
-        <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
+        <tr data-search="{{ (m.id ~ ' ' ~ ('area ' if m.is_area else '') ~ m.name ~ ' ' ~ (m.serial_no or '') ~ ' ' ~ (m.asset_no or '') ~ ' ' ~ m.location)|lower }}" data-loc="{{ m.location|lower }}" data-status="{{ 'inactive' if not m.active else ('out' if m.out_of_service else 'active') }}"{% if m.out_of_service %} class="row-oos"{% endif %}>
           <td class="mono" style="white-space:nowrap;">{{ m.id }}</td>
-          <td>{{ m.name }}{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}{% if m.asset_no %}<div class="mono" style="color:var(--text-muted);font-size:11px;">Asset {{ m.asset_no }}</div>{% endif %}</td>
+          <td>{{ m.name }}{% if m.is_area %} <span class="badge prog" style="margin-left:4px;">Area</span>{% endif %}</td>
+          <td class="mono" style="font-size:12px;">{{ m.serial_no or '' }}</td>
+          <td class="mono" style="font-size:12px;">{{ m.asset_no or '' }}</td>
           <td>{{ m.location }}</td>
           <td>
             {% set sv = service.get(m.id) %}

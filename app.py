@@ -13,6 +13,7 @@ Run locally:
 Deploy: see README.md for Render setup.
 """
 import os
+import re
 import io
 import csv
 import hmac
@@ -173,6 +174,20 @@ LEGACY_PROGRESS = {
 
 
 # --- Models ---------------------------------------------------------------
+_SERIAL_IN_NAME = re.compile(r"^(.*?)\s*\((S/N|model)\s+([^)]+)\)\s*$", re.IGNORECASE)
+
+
+def split_serial(name):
+    """Older names carried the serial in brackets, e.g. "Rower 1 (S/N 12345)".
+    Return (name, serial) with the bracket moved out. Model numbers keep the
+    word "Model" so they are not mistaken for serial numbers."""
+    m = _SERIAL_IN_NAME.match((name or "").strip())
+    if not m or not m.group(1).strip():
+        return (name or "").strip(), None
+    value = m.group(3).strip()
+    return m.group(1).strip(), (value if m.group(2).upper() == "S/N" else f"Model {value}")
+
+
 class Machine(db.Model):
     id = db.Column(db.String(20), primary_key=True)   # e.g. "RW-03"
     name = db.Column(db.String(120), nullable=False)
@@ -180,6 +195,8 @@ class Machine(db.Model):
     active = db.Column(db.Boolean, default=True)
     # Service provider's asset number for the machine (e.g. Gym Gear "23521").
     asset_no = db.Column(db.String(40), nullable=True)
+    # The maker's serial number (or model number where there is no serial).
+    serial_no = db.Column(db.String(80), nullable=True)
     # Out of service: members see a "do not use" warning when they scan the code.
     out_of_service = db.Column(db.Boolean, nullable=False, default=False)
     out_of_service_note = db.Column(db.String(200), nullable=True)
@@ -424,7 +441,8 @@ def build_fault_email(report):
     body = (
         f"{'Area' if area else 'Machine'}: {report.machine.name} ({report.machine.id})\n"
         f"Location: {report.machine.location}\n"
-        f"{'Issue' if area else 'Fault'}: {report.fault_type}\n"
+        + (f"Serial number: {report.machine.serial_no}\n" if report.machine.serial_no else "")
+        + f"{'Issue' if area else 'Fault'}: {report.fault_type}\n"
         + ("" if area else f"Red out of order hang tag placed by member: {report.hang_tag or 'Not asked'}\n")
         + f"Reported: {_local_time(report.created_at)}\n"
         + (f"Details: {report.details}\n" if report.details else "")
@@ -776,7 +794,11 @@ def machines_admin():
         elif db.session.get(Machine, machine_id):
             flash(f"Machine ID {machine_id} already exists.")
         else:
-            db.session.add(Machine(id=machine_id, name=name, location=location, kind=kind))
+            serial_no = (request.form.get("serial_no") or "").strip()
+            if not serial_no:
+                name, serial_no = split_serial(name)
+            db.session.add(Machine(id=machine_id, name=name, location=location, kind=kind,
+                                   serial_no=(serial_no or None)))
             db.session.commit()
             flash(f"Added {name}.")
         return redirect(url_for("machines_admin"))
@@ -800,6 +822,14 @@ def import_machine_rows(rows):
         location = (row.get("location") or "").strip()
         kind = (row.get("type") or "").strip().lower()
         kind = kind if kind in KINDS else None          # blank keeps what is already set
+        serial = (row.get("serial") or row.get("serial_no") or row.get("serial number") or "").strip()
+        asset = (row.get("asset_no") or row.get("asset") or "").strip()
+        if not serial:
+            name, moved = split_serial(name)
+            serial = moved or ""
+        if len(serial) > 80 or len(asset) > 40:
+            skipped += 1
+            continue
         if not (machine_id and name and location) or len(machine_id) > 20:
             skipped += 1
             continue
@@ -810,13 +840,29 @@ def import_machine_rows(rows):
             existing.active = True
             if kind:
                 existing.kind = kind
+            if serial:                                   # blank keeps what is already set
+                existing.serial_no = serial
+            if asset:
+                existing.asset_no = asset
             updated += 1
         else:
             db.session.add(Machine(id=machine_id, name=name, location=location,
-                                   kind=kind or KIND_EQUIPMENT))
+                                   kind=kind or KIND_EQUIPMENT,
+                                   serial_no=serial or None, asset_no=asset or None))
             added += 1
     db.session.commit()
     return added, updated, skipped
+
+
+@app.route("/machines/export.csv")
+@login_required
+def export_machines():
+    """The whole equipment list in the same layout the upload accepts."""
+    rows = [[m.id, m.name, m.serial_no or "", m.location, m.kind, m.asset_no or ""]
+            for m in Machine.query.order_by(Machine.location, Machine.name).all()]
+    return csv_response(
+        f"fault-flag-equipment-{to_uk(utcnow()).strftime('%Y-%m-%d')}.csv",
+        ["id", "name", "serial", "location", "type", "asset_no"], rows)
 
 
 @app.route("/machines/import", methods=["POST"])
@@ -1068,16 +1114,21 @@ def edit_machine(machine_id):
         name = (request.form.get("name") or "").strip()
         location = (request.form.get("location") or "").strip()
         asset_no = (request.form.get("asset_no") or "").strip()
+        serial_no = (request.form.get("serial_no") or "").strip()
+        if not serial_no:
+            name, serial_no = split_serial(name)
+            serial_no = serial_no or ""
         kind = request.form.get("kind", machine.kind)
         if kind not in KINDS:
             kind = machine.kind
         if not (name and location):
             flash("Name and location are both required.")
-        elif len(name) > 120 or len(location) > 120 or len(asset_no) > 40:
+        elif len(name) > 120 or len(location) > 120 or len(asset_no) > 40 or len(serial_no) > 80:
             flash("One of those entries is too long.")
         else:
             machine.name, machine.location = name, location
             machine.asset_no = asset_no or None
+            machine.serial_no = serial_no or None
             machine.kind = kind
             db.session.commit()
             flash(f"Saved changes to {machine.name}.")
@@ -1170,6 +1221,7 @@ def upgrade_database():
     existing = {c["name"] for c in inspect(db.engine).get_columns("machine")}
     additions = {
         "asset_no": "VARCHAR(40)",
+        "serial_no": "VARCHAR(80)",
         "out_of_service": "BOOLEAN NOT NULL DEFAULT FALSE",
         "out_of_service_note": "VARCHAR(200)",
         "kind": "VARCHAR(12) NOT NULL DEFAULT 'equipment'",
@@ -1287,6 +1339,23 @@ def upgrade_database():
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         app.logger.error("Could not add areas: %s", exc)
+
+    # Move any serial or model number out of the name into its own field. Safe to
+    # repeat: it only touches names that still end in "(S/N ...)" or "(model ...)".
+    try:
+        moved = 0
+        for m in Machine.query.filter(db.or_(Machine.name.like("%(S/N %"), Machine.name.like("%(model %"),
+                                             Machine.name.like("%(Model %"), Machine.name.like("%(s/n %"))):
+            base, serial = split_serial(m.name)
+            if serial and not m.serial_no:
+                m.name, m.serial_no = base, serial
+                moved += 1
+        if moved:
+            db.session.commit()
+            app.logger.warning("Moved %d serial or model numbers out of machine names", moved)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not split serial numbers: %s", exc)
 
 
 # --- CLI ------------------------------------------------------------------
