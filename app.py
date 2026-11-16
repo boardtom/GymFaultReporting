@@ -156,12 +156,12 @@ YES_NO = ["Yes", "No"]
 # Where a report has got to once WI has looked at it. Order matters: it is the sort order.
 PROGRESS_NEW = "Awaiting WI review"
 PROGRESS_REVIEWED = "Reviewed by WI"
-PROGRESS_RETURN = "Gym Gear visited, return visit needed"
+PROGRESS_RETURN = "Contractor visited, return visit needed"
 PROGRESS = [
     PROGRESS_NEW,
     PROGRESS_REVIEWED,
-    "Gym Gear contacted",
-    "Gym Gear visit booked",
+    "Contractor contacted",
+    "Contractor visit booked",
     PROGRESS_RETURN,
     "Monitoring",
 ]
@@ -169,6 +169,9 @@ PROGRESS = [
 LEGACY_PROGRESS = {
     "New": PROGRESS_NEW,
     "Gym Gear visited, may need to return": PROGRESS_RETURN,
+    "Gym Gear contacted": "Contractor contacted",
+    "Gym Gear visit booked": "Contractor visit booked",
+    "Gym Gear visited, return visit needed": PROGRESS_RETURN,
     "Awaiting parts": PROGRESS_RETURN,
 }
 
@@ -247,7 +250,7 @@ class ServiceRecord(db.Model):
 
 
 class ReportUpdate(db.Model):
-    """One entry in a report's progress history, e.g. 'Gym Gear contacted'."""
+    """One entry in a report's progress history, e.g. 'Contractor contacted'."""
     id = db.Column(db.Integer, primary_key=True)
     report_id = db.Column(db.Integer, db.ForeignKey("report.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -698,7 +701,7 @@ def set_report_severity(report_id):
 @app.route("/log/<int:report_id>/update", methods=["POST"])
 @login_required
 def add_report_update(report_id):
-    """WI records where a report has got to, e.g. 'Gym Gear contacted'."""
+    """WI records where a report has got to, e.g. 'Contractor contacted'."""
     rpt = db.get_or_404(Report, report_id)
     status = request.form.get("status", "")
     if status not in PROGRESS:
