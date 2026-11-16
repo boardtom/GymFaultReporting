@@ -180,6 +180,13 @@ LEGACY_PROGRESS = {
 _SERIAL_IN_NAME = re.compile(r"^(.*?)\s*\((S/N|model)\s+([^)]+)\)\s*$", re.IGNORECASE)
 
 
+def tidy_name(name):
+    """Capitalise the first letter of every word, e.g. "Peloton bike 4" becomes
+    "Peloton Bike 4" and "Assisted pull-up/dip" becomes "Assisted Pull-Up/Dip".
+    Letters already capitalised (PM3, SkiErg, GHD) are left alone."""
+    return re.sub(r"(^|[\s/\-(])([a-z])", lambda m: m.group(1) + m.group(2).upper(), (name or "").strip())
+
+
 def split_serial(name):
     """Older names carried the serial in brackets, e.g. "Rower 1 (S/N 12345)".
     Return (name, serial) with the bracket moved out. Model numbers keep the
@@ -827,7 +834,7 @@ def qr_png(machine_id):
 def machines_admin():
     if request.method == "POST":
         machine_id = request.form.get("id", "").strip().upper()
-        name = request.form.get("name", "").strip()
+        name = tidy_name(request.form.get("name", ""))
         location = request.form.get("location", "").strip()
         kind = request.form.get("kind", KIND_EQUIPMENT)
         if kind not in KINDS:
@@ -861,7 +868,7 @@ def import_machine_rows(rows):
     added = updated = skipped = 0
     for row in rows:
         machine_id = (row.get("id") or "").strip().upper()
-        name = (row.get("name") or "").strip()
+        name = tidy_name(row.get("name"))
         location = (row.get("location") or "").strip()
         kind = (row.get("type") or "").strip().lower()
         kind = kind if kind in KINDS else None          # blank keeps what is already set
@@ -1154,7 +1161,7 @@ def edit_machine(machine_id):
     machine = db.get_or_404(Machine, machine_id)
     locations = sorted({m.location for m in Machine.query.all()})
     if request.method == "POST":
-        name = (request.form.get("name") or "").strip()
+        name = tidy_name(request.form.get("name"))
         location = (request.form.get("location") or "").strip()
         asset_no = (request.form.get("asset_no") or "").strip()
         serial_no = (request.form.get("serial_no") or "").strip()
@@ -1399,6 +1406,24 @@ def upgrade_database():
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         app.logger.error("Could not split serial numbers: %s", exc)
+
+    # One-off: capitalise every word in existing machine names (16 Nov 2026). Later
+    # edits and uploads are tidied the same way as they are saved.
+    tidy_key = "capitalise-machine-names-2026-11-16"
+    try:
+        if not db.session.get(AppliedUpdate, tidy_key) and Machine.query.count() > 0:
+            db.session.add(AppliedUpdate(key=tidy_key))
+            changed = 0
+            for m in Machine.query.all():
+                new = tidy_name(m.name)
+                if new and new != m.name:
+                    m.name = new
+                    changed += 1
+            db.session.commit()
+            app.logger.warning("Capitalised %d machine names", changed)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        app.logger.error("Could not capitalise machine names: %s", exc)
 
 
 # --- CLI ------------------------------------------------------------------
